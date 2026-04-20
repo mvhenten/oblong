@@ -1,6 +1,6 @@
 use iced::widget::{
-    button, column, container, horizontal_rule, pick_list, row, scrollable, text, text_input,
-    Column,
+    button, column, container, horizontal_rule, pick_list, row, scrollable, slider, text,
+    text_input, Column,
 };
 use iced::{alignment, color, window, Border, Element, Font, Length, Task, Theme};
 
@@ -134,8 +134,8 @@ fn spinner<'a>(
         .into()
 }
 
-/// Parse a "#rrggbb" hex string into an iced Color.
-fn parse_hex_color(hex: &str) -> Option<iced::Color> {
+/// Parse a "#rrggbb" hex string into (r, g, b).
+fn parse_hex_rgb(hex: &str) -> Option<(u8, u8, u8)> {
     let hex = hex.strip_prefix('#').unwrap_or(hex);
     if hex.len() != 6 {
         return None;
@@ -143,27 +143,46 @@ fn parse_hex_color(hex: &str) -> Option<iced::Color> {
     let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
     let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
     let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some((r, g, b))
+}
+
+/// Parse a "#rrggbb" hex string into an iced Color.
+fn parse_hex_color(hex: &str) -> Option<iced::Color> {
+    let (r, g, b) = parse_hex_rgb(hex)?;
     Some(iced::Color::from_rgb8(r, g, b))
 }
 
-/// Color hex input with a preview swatch.
+/// Color hex input with a clickable preview swatch.
 fn color_input<'a>(
     value: &str,
     on_input: impl Fn(String) -> Message + 'a,
+    on_click: Message,
+    is_active: bool,
 ) -> Element<'a, Message> {
     let swatch_color = parse_hex_color(value).unwrap_or(iced::Color::from_rgb8(0x33, 0x33, 0x33));
-    let swatch = container(text(""))
-        .width(Length::Fixed(18.0))
-        .height(Length::Fixed(18.0))
-        .style(move |_theme: &Theme| container::Style {
-            background: Some(iced::Background::Color(swatch_color)),
-            border: Border {
-                color: color!(0x666666),
-                width: 1.0,
-                radius: 2.0.into(),
-            },
-            ..Default::default()
-        });
+    let highlight = if is_active { color!(0xeeeeee) } else { color!(0x666666) };
+    let swatch = button(
+        container(text(""))
+            .width(Length::Fixed(16.0))
+            .height(Length::Fixed(16.0))
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(iced::Background::Color(swatch_color)),
+                border: Border {
+                    color: highlight,
+                    width: if is_active { 2.0 } else { 1.0 },
+                    radius: 2.0.into(),
+                },
+                ..Default::default()
+            }),
+    )
+    .on_press(on_click)
+    .padding(0)
+    .style(|_theme: &Theme, _status| button::Style {
+        background: None,
+        text_color: color!(0xffffff),
+        border: Border { width: 0.0, ..Default::default() },
+        shadow: Default::default(),
+    });
     let input = text_input("#rrggbb", value)
         .on_input(on_input)
         .size(11)
@@ -171,6 +190,71 @@ fn color_input<'a>(
     row![swatch, input]
         .spacing(4)
         .align_y(alignment::Vertical::Center)
+        .into()
+}
+
+/// RGB slider editor panel for the active color.
+fn color_editor<'a>(hex: &'a str) -> Element<'a, Message> {
+    let (r, g, b) = parse_hex_rgb(hex).unwrap_or((0, 0, 0));
+    let preview_color = iced::Color::from_rgb8(r, g, b);
+
+    let preview = container(text(""))
+        .width(Length::Fixed(48.0))
+        .height(Length::Fixed(48.0))
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(iced::Background::Color(preview_color)),
+            border: Border {
+                color: color!(0x666666),
+                width: 1.0,
+                radius: 4.0.into(),
+            },
+            ..Default::default()
+        });
+
+    let r_label = text("R").size(12).color(color!(0xcc6666)).width(Length::Fixed(16.0));
+    let r_val = text(format!("{r}")).size(12).width(Length::Fixed(30.0));
+    let r_slider = slider(0..=255u8, r, move |v| Message::AppColorSlider(v, g, b))
+        .width(Length::Fill);
+    let r_row = row![r_label, r_slider, r_val]
+        .spacing(8)
+        .align_y(alignment::Vertical::Center);
+
+    let g_label = text("G").size(12).color(color!(0x66cc66)).width(Length::Fixed(16.0));
+    let g_val = text(format!("{g}")).size(12).width(Length::Fixed(30.0));
+    let g_slider = slider(0..=255u8, g, move |v| Message::AppColorSlider(r, v, b))
+        .width(Length::Fill);
+    let g_row = row![g_label, g_slider, g_val]
+        .spacing(8)
+        .align_y(alignment::Vertical::Center);
+
+    let b_label = text("B").size(12).color(color!(0x6666cc)).width(Length::Fixed(16.0));
+    let b_val = text(format!("{b}")).size(12).width(Length::Fixed(30.0));
+    let b_slider = slider(0..=255u8, b, move |v| Message::AppColorSlider(r, g, v))
+        .width(Length::Fill);
+    let b_row = row![b_label, b_slider, b_val]
+        .spacing(8)
+        .align_y(alignment::Vertical::Center);
+
+    let hex_label = text(hex).size(13).color(color!(0xaaaaaa));
+
+    let sliders = column![r_row, g_row, b_row].spacing(4).width(Length::Fill);
+
+    let editor = row![preview, sliders, hex_label]
+        .spacing(12)
+        .align_y(alignment::Vertical::Center);
+
+    container(editor)
+        .padding(12)
+        .width(Length::Fill)
+        .style(|_theme: &Theme| container::Style {
+            background: Some(iced::Background::Color(color!(0x2a2a2a))),
+            border: Border {
+                color: color!(0x444444),
+                width: 1.0,
+                radius: 4.0.into(),
+            },
+            ..Default::default()
+        })
         .into()
 }
 
@@ -217,6 +301,7 @@ struct App {
     // Appearance
     appearance: AppearanceConfig,
     system_fonts: Vec<String>,
+    editing_color: Option<(ColorTarget, ColorField)>,
     // Shared
     status: String,
 }
@@ -250,6 +335,7 @@ impl Default for App {
             output_configs,
             appearance,
             system_fonts,
+            editing_color: None,
             status: String::new(),
         }
     }
@@ -284,6 +370,8 @@ enum Message {
     AppBorderWidthStep(i32),
     AppBorderStyle(String),
     AppColor(ColorTarget, ColorField, String),
+    AppColorSelect(ColorTarget, ColorField),
+    AppColorSlider(u8, u8, u8),
     SaveAppearance,
     SaveAndReloadAppearance,
     // Shared
@@ -318,6 +406,22 @@ impl App {
             .filter(|c| c.name != exclude)
             .map(|c| c.name.clone())
             .collect()
+    }
+
+    fn get_color_hex(&self, target: ColorTarget, field: ColorField) -> &str {
+        let cs = match target {
+            ColorTarget::Focused => &self.appearance.colors.focused,
+            ColorTarget::FocusedInactive => &self.appearance.colors.focused_inactive,
+            ColorTarget::Unfocused => &self.appearance.colors.unfocused,
+            ColorTarget::Urgent => &self.appearance.colors.urgent,
+        };
+        match field {
+            ColorField::Border => &cs.border,
+            ColorField::Background => &cs.background,
+            ColorField::Text => &cs.text,
+            ColorField::Indicator => &cs.indicator,
+            ColorField::ChildBorder => &cs.child_border,
+        }
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -523,6 +627,33 @@ impl App {
                     ColorField::Text => cs.text = val,
                     ColorField::Indicator => cs.indicator = val,
                     ColorField::ChildBorder => cs.child_border = val,
+                }
+                self.status.clear();
+            }
+            Message::AppColorSelect(target, field) => {
+                let key = (target, field);
+                if self.editing_color == Some(key) {
+                    self.editing_color = None;
+                } else {
+                    self.editing_color = Some(key);
+                }
+            }
+            Message::AppColorSlider(r, g, b) => {
+                let hex = format!("#{:02x}{:02x}{:02x}", r, g, b);
+                if let Some((target, field)) = self.editing_color {
+                    let cs = match target {
+                        ColorTarget::Focused => &mut self.appearance.colors.focused,
+                        ColorTarget::FocusedInactive => &mut self.appearance.colors.focused_inactive,
+                        ColorTarget::Unfocused => &mut self.appearance.colors.unfocused,
+                        ColorTarget::Urgent => &mut self.appearance.colors.urgent,
+                    };
+                    match field {
+                        ColorField::Border => cs.border = hex,
+                        ColorField::Background => cs.background = hex,
+                        ColorField::Text => cs.text = hex,
+                        ColorField::Indicator => cs.indicator = hex,
+                        ColorField::ChildBorder => cs.child_border = hex,
+                    }
                 }
                 self.status.clear();
             }
@@ -980,17 +1111,33 @@ impl App {
 
         for (label, target, cs) in &color_targets {
             let t = *target;
-            let color_row = row![
-                text(*label).size(13).width(Length::Fixed(120.0)),
-                color_input(&cs.border, move |v| Message::AppColor(t, ColorField::Border, v)),
-                color_input(&cs.background, move |v| Message::AppColor(t, ColorField::Background, v)),
-                color_input(&cs.text, move |v| Message::AppColor(t, ColorField::Text, v)),
-                color_input(&cs.indicator, move |v| Message::AppColor(t, ColorField::Indicator, v)),
-                color_input(&cs.child_border, move |v| Message::AppColor(t, ColorField::ChildBorder, v)),
-            ]
-            .spacing(4)
-            .align_y(alignment::Vertical::Center);
+            let ec = self.editing_color;
+            let fields: [(ColorField, &str); 5] = [
+                (ColorField::Border, &cs.border),
+                (ColorField::Background, &cs.background),
+                (ColorField::Text, &cs.text),
+                (ColorField::Indicator, &cs.indicator),
+                (ColorField::ChildBorder, &cs.child_border),
+            ];
+            let mut color_row = row![text(*label).size(13).width(Length::Fixed(120.0))].spacing(4);
+            for (field, val) in &fields {
+                let f = *field;
+                let active = ec == Some((t, f));
+                color_row = color_row.push(color_input(
+                    val,
+                    move |v| Message::AppColor(t, f, v),
+                    Message::AppColorSelect(t, f),
+                    active,
+                ));
+            }
+            let color_row = color_row.align_y(alignment::Vertical::Center);
             content_col = content_col.push(color_row);
+        }
+
+        // Show color editor if a swatch is selected
+        if let Some((target, field)) = self.editing_color {
+            let hex = self.get_color_hex(target, field);
+            content_col = content_col.push(color_editor(hex));
         }
 
         let buttons = row![
