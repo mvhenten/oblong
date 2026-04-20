@@ -216,7 +216,54 @@ pub fn write_appearance_conf(config: &AppearanceConfig) -> Result<(), String> {
 
     fs::write(dir.join("appearance.conf"), &out).map_err(|e| e.to_string())?;
 
+    comment_out_appearance_conflicts()?;
     super::config::ensure_include()?;
 
+    Ok(())
+}
+
+/// Appearance directives that oblong manages.
+/// If these appear in the main sway config, they conflict with our generated conf.
+const APPEARANCE_PREFIXES: &[&str] = &[
+    "client.focused",
+    "client.unfocused",
+    "client.focused_inactive",
+    "client.urgent",
+    "default_border",
+    "default_floating_border",
+    "gaps inner",
+    "gaps outer",
+    "font ",
+];
+
+/// Comment out any appearance directives in the main sway config that
+/// would conflict with our generated appearance.conf.
+fn comment_out_appearance_conflicts() -> Result<(), String> {
+    let main_config = super::config::sway_config_path();
+    let content = fs::read_to_string(&main_config).map_err(|e| e.to_string())?;
+    let mut changed = false;
+    let output: Vec<String> = content
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim();
+            // Skip lines already commented out (by us or the user)
+            if trimmed.starts_with('#') {
+                return line.to_string();
+            }
+            let dominated = APPEARANCE_PREFIXES
+                .iter()
+                .any(|prefix| trimmed.starts_with(prefix));
+            if dominated {
+                changed = true;
+                format!("# [oblong] {}", line)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+
+    if changed {
+        fs::write(&main_config, output.join("\n")).map_err(|e| e.to_string())?;
+    }
     Ok(())
 }

@@ -1119,6 +1119,48 @@ impl App {
                 (ColorField::Indicator, &cs.indicator),
                 (ColorField::ChildBorder, &cs.child_border),
             ];
+
+            // Preview bar showing what this color class looks like
+            let border_c = parse_hex_color(&cs.child_border).unwrap_or(color!(0x333333));
+            let bg_c = parse_hex_color(&cs.background).unwrap_or(color!(0x222222));
+            let text_c = parse_hex_color(&cs.text).unwrap_or(color!(0xffffff));
+            let indicator_c = parse_hex_color(&cs.indicator).unwrap_or(color!(0x333333));
+            let preview_bar = container(
+                row![
+                    // Indicator pip
+                    container(text(""))
+                        .width(Length::Fixed(4.0))
+                        .height(Length::Fixed(20.0))
+                        .style(move |_: &Theme| container::Style {
+                            background: Some(iced::Background::Color(indicator_c)),
+                            ..Default::default()
+                        }),
+                    // Title text on background
+                    container(
+                        text(format!("  {} — Window Title", label))
+                            .size(12)
+                            .color(text_c)
+                    )
+                    .width(Length::Fill)
+                    .padding([4, 8])
+                    .style(move |_: &Theme| container::Style {
+                        background: Some(iced::Background::Color(bg_c)),
+                        ..Default::default()
+                    }),
+                ]
+                .align_y(alignment::Vertical::Center)
+            )
+            .width(Length::Fill)
+            .style(move |_: &Theme| container::Style {
+                background: Some(iced::Background::Color(border_c)),
+                border: Border {
+                    color: border_c,
+                    width: 2.0,
+                    radius: 3.0.into(),
+                },
+                ..Default::default()
+            });
+
             let mut color_row = row![text(*label).size(13).width(Length::Fixed(120.0))].spacing(4);
             for (field, val) in &fields {
                 let f = *field;
@@ -1131,7 +1173,7 @@ impl App {
                 ));
             }
             let color_row = color_row.align_y(alignment::Vertical::Center);
-            content_col = content_col.push(color_row);
+            content_col = content_col.push(preview_bar).push(color_row);
         }
 
         // Show color editor if a swatch is selected
