@@ -2,6 +2,7 @@ mod gui;
 mod snap;
 mod config;
 mod outputs;
+mod appearance;
 
 use clap::{Parser, Subcommand};
 

@@ -36,6 +36,7 @@ Two tabs:
 
 - **Shortcuts** — edit key bindings for all snap directions. Detects conflicting bindings in your main sway config and can comment them out with "Fix Conflicts".
 - **Displays** — configure connected monitors: resolution, scale, and relative positioning (left of, right of, above, below). Queries live output info from sway.
+- **Appearance** — configure sway font, inner/outer gaps, border style and width, and per-class window colors (focused, unfocused, urgent, etc.).
 
 ## File Layout
 
@@ -43,10 +44,12 @@ Two tabs:
 ~/.config/oblong/
     bindings.json          # source of truth for shortcuts
     outputs.json           # source of truth for display config
+    appearance.json        # source of truth for appearance
 
 ~/.config/sway/oblong/
     shortcuts.conf         # generated sway bindsyms
     outputs.conf           # generated sway output blocks
+    appearance.conf        # generated sway appearance (font, gaps, borders, colors)
 
 ~/.config/sway/config
     include ~/.config/sway/oblong/*.conf   # one line added by oblong
@@ -76,7 +79,7 @@ New `.conf` files dropped into `~/.config/sway/oblong/` are picked up automatica
 
 ## Planned
 
-- [ ] Appearance tab (gaps, borders, colors, font)
+- [x] Appearance tab (gaps, borders, colors, font)
 - [ ] Input tab (keyboard layout, repeat rate, touchpad)
 - [ ] Autostart tab (exec / exec_always)
 - [ ] Gap-aware snap positioning

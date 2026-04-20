@@ -2,14 +2,20 @@ use iced::widget::{
     button, column, container, horizontal_rule, pick_list, row, scrollable, text, text_input,
     Column,
 };
-use iced::{alignment, color, window, Border, Element, Length, Task, Theme};
+use iced::{alignment, color, window, Border, Element, Font, Length, Task, Theme};
 
+use crate::appearance::*;
 use crate::config::*;
 use crate::outputs::*;
+
+const APP_FONT_BYTES: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
+const APP_FONT: Font = Font::with_name("DejaVu Sans");
 
 pub fn run() -> iced::Result {
     iced::application("Oblong", App::update, App::view)
         .theme(|_| Theme::Dark)
+        .font(APP_FONT_BYTES)
+        .default_font(APP_FONT)
         .window_size((700.0, 800.0))
         .run()
 }
@@ -75,6 +81,99 @@ fn tab_inactive(_theme: &Theme, status: button::Status) -> button::Style {
     }
 }
 
+fn spinner_button(_theme: &Theme, status: button::Status) -> button::Style {
+    let base = button::Style {
+        background: Some(iced::Background::Color(color!(0x3a3a3a))),
+        text_color: color!(0xaaaaaa),
+        border: Border {
+            color: color!(0x555555),
+            width: 1.0,
+            radius: 3.0.into(),
+        },
+        shadow: Default::default(),
+    };
+    match status {
+        button::Status::Hovered => button::Style {
+            background: Some(iced::Background::Color(color!(0x4a4a4a))),
+            text_color: color!(0xeeeeee),
+            ..base
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(iced::Background::Color(color!(0x2a2a2a))),
+            ..base
+        },
+        _ => base,
+    }
+}
+
+// ── Composite widgets ───────────────────────────────────────
+
+/// Number input with − / + spinner buttons.
+fn spinner<'a>(
+    value: &str,
+    placeholder: &str,
+    on_input: impl Fn(String) -> Message + 'a,
+    on_dec: Message,
+    on_inc: Message,
+) -> Element<'a, Message> {
+    let dec = button(text("−").size(14))
+        .on_press(on_dec)
+        .style(spinner_button)
+        .padding([2, 8]);
+    let input = text_input(placeholder, value)
+        .on_input(on_input)
+        .size(13)
+        .width(Length::Fixed(56.0));
+    let inc = button(text("+").size(14))
+        .on_press(on_inc)
+        .style(spinner_button)
+        .padding([2, 8]);
+    row![dec, input, inc]
+        .spacing(2)
+        .align_y(alignment::Vertical::Center)
+        .into()
+}
+
+/// Parse a "#rrggbb" hex string into an iced Color.
+fn parse_hex_color(hex: &str) -> Option<iced::Color> {
+    let hex = hex.strip_prefix('#').unwrap_or(hex);
+    if hex.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some(iced::Color::from_rgb8(r, g, b))
+}
+
+/// Color hex input with a preview swatch.
+fn color_input<'a>(
+    value: &str,
+    on_input: impl Fn(String) -> Message + 'a,
+) -> Element<'a, Message> {
+    let swatch_color = parse_hex_color(value).unwrap_or(iced::Color::from_rgb8(0x33, 0x33, 0x33));
+    let swatch = container(text(""))
+        .width(Length::Fixed(18.0))
+        .height(Length::Fixed(18.0))
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(iced::Background::Color(swatch_color)),
+            border: Border {
+                color: color!(0x666666),
+                width: 1.0,
+                radius: 2.0.into(),
+            },
+            ..Default::default()
+        });
+    let input = text_input("#rrggbb", value)
+        .on_input(on_input)
+        .size(11)
+        .width(Length::Fill);
+    row![swatch, input]
+        .spacing(4)
+        .align_y(alignment::Vertical::Center)
+        .into()
+}
+
 // ── Default snap bindings ───────────────────────────────────
 
 fn default_snap_bindings() -> Vec<Binding> {
@@ -103,6 +202,7 @@ fn default_snap_bindings() -> Vec<Binding> {
 enum Tab {
     Shortcuts,
     Displays,
+    Appearance,
 }
 
 // ── App state ───────────────────────────────────────────────
@@ -114,6 +214,9 @@ struct App {
     // Displays
     sway_outputs: Vec<SwayOutput>,
     output_configs: Vec<OutputConfig>,
+    // Appearance
+    appearance: AppearanceConfig,
+    system_fonts: Vec<String>,
     // Shared
     status: String,
 }
@@ -137,11 +240,16 @@ impl Default for App {
             Err(_) => (vec![], vec![]),
         };
 
+        let appearance = load_appearance().unwrap_or_default();
+        let system_fonts = list_system_fonts();
+
         Self {
             tab: Tab::Shortcuts,
             groups,
             sway_outputs,
             output_configs,
+            appearance,
+            system_fonts,
             status: String::new(),
         }
     }
@@ -158,13 +266,45 @@ enum Message {
     // Displays
     OutputResolution(usize, String),
     OutputScale(usize, String),
+    OutputScaleStep(usize, i32),
     OutputPosition(usize, String),
     OutputPositionTarget(usize, String),
     SaveDisplays,
     SaveAndReloadDisplays,
     RefreshOutputs,
+    // Appearance
+    AppFontFamily(String),
+    AppFontSize(String),
+    AppFontSizeStep(i32),
+    AppGapsInner(String),
+    AppGapsInnerStep(i32),
+    AppGapsOuter(String),
+    AppGapsOuterStep(i32),
+    AppBorderWidth(String),
+    AppBorderWidthStep(i32),
+    AppBorderStyle(String),
+    AppColor(ColorTarget, ColorField, String),
+    SaveAppearance,
+    SaveAndReloadAppearance,
     // Shared
     Quit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorTarget {
+    Focused,
+    FocusedInactive,
+    Unfocused,
+    Urgent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorField {
+    Border,
+    Background,
+    Text,
+    Indicator,
+    ChildBorder,
 }
 
 impl App {
@@ -245,6 +385,14 @@ impl App {
                 }
                 self.status.clear();
             }
+            Message::OutputScaleStep(idx, delta) => {
+                if let Some(conf) = self.output_configs.get_mut(idx) {
+                    let cur = conf.scale.unwrap_or(1.0);
+                    let step = if delta > 0 { 0.25 } else { -0.25 };
+                    conf.scale = Some((cur + step).max(0.25));
+                }
+                self.status.clear();
+            }
             Message::OutputPosition(idx, relation) => {
                 if let Some(conf) = self.output_configs.get(idx) {
                     let conf_name = conf.name.clone();
@@ -307,7 +455,93 @@ impl App {
                         self.output_configs = cfgs;
                         self.status = "Refreshed from sway.".into();
                     }
-                    Err(e) => self.status = format!("✗ {e}"),
+                    Err(e) => self.status = format!("Error: {e}"),
+                }
+            }
+
+            // ── Appearance ──────────────────────────────
+            Message::AppFontFamily(family) => {
+                self.appearance.font_family = family;
+                self.status.clear();
+            }
+            Message::AppFontSize(val) => {
+                if let Ok(s) = val.parse::<u32>() {
+                    self.appearance.font_size = s;
+                }
+                self.status.clear();
+            }
+            Message::AppFontSizeStep(delta) => {
+                self.appearance.font_size = (self.appearance.font_size as i32 + delta).max(1) as u32;
+                self.status.clear();
+            }
+            Message::AppGapsInner(val) => {
+                if let Ok(g) = val.parse::<u32>() {
+                    self.appearance.gaps_inner = g;
+                }
+                self.status.clear();
+            }
+            Message::AppGapsInnerStep(delta) => {
+                self.appearance.gaps_inner = (self.appearance.gaps_inner as i32 + delta).max(0) as u32;
+                self.status.clear();
+            }
+            Message::AppGapsOuter(val) => {
+                if let Ok(g) = val.parse::<u32>() {
+                    self.appearance.gaps_outer = g;
+                }
+                self.status.clear();
+            }
+            Message::AppGapsOuterStep(delta) => {
+                self.appearance.gaps_outer = (self.appearance.gaps_outer as i32 + delta).max(0) as u32;
+                self.status.clear();
+            }
+            Message::AppBorderWidth(val) => {
+                if let Ok(w) = val.parse::<u32>() {
+                    self.appearance.border_width = w;
+                }
+                self.status.clear();
+            }
+            Message::AppBorderWidthStep(delta) => {
+                self.appearance.border_width = (self.appearance.border_width as i32 + delta).max(0) as u32;
+                self.status.clear();
+            }
+            Message::AppBorderStyle(val) => {
+                if let Some(style) = BorderStyle::from_str(&val) {
+                    self.appearance.border_style = style;
+                }
+                self.status.clear();
+            }
+            Message::AppColor(target, field, val) => {
+                let cs = match target {
+                    ColorTarget::Focused => &mut self.appearance.colors.focused,
+                    ColorTarget::FocusedInactive => &mut self.appearance.colors.focused_inactive,
+                    ColorTarget::Unfocused => &mut self.appearance.colors.unfocused,
+                    ColorTarget::Urgent => &mut self.appearance.colors.urgent,
+                };
+                match field {
+                    ColorField::Border => cs.border = val,
+                    ColorField::Background => cs.background = val,
+                    ColorField::Text => cs.text = val,
+                    ColorField::Indicator => cs.indicator = val,
+                    ColorField::ChildBorder => cs.child_border = val,
+                }
+                self.status.clear();
+            }
+            Message::SaveAppearance => {
+                match write_appearance_conf(&self.appearance) {
+                    Ok(()) => {
+                        save_appearance(&self.appearance);
+                        self.status = "Saved.".into();
+                    }
+                    Err(e) => self.status = format!("Error: {e}"),
+                }
+            }
+            Message::SaveAndReloadAppearance => {
+                match write_appearance_conf(&self.appearance) {
+                    Ok(()) => {
+                        save_appearance(&self.appearance);
+                        self.sway_reload("Appearance saved");
+                    }
+                    Err(e) => self.status = format!("Error: {e}"),
                 }
             }
 
@@ -362,6 +596,7 @@ impl App {
         let content: Element<'_, Message> = match self.tab {
             Tab::Shortcuts => self.view_shortcuts(),
             Tab::Displays => self.view_displays(),
+            Tab::Appearance => self.view_appearance(),
         };
 
         let status = text(&self.status).size(13).color(color!(0x5a8a5a));
@@ -394,7 +629,12 @@ impl App {
             .style(if self.tab == Tab::Displays { tab_active } else { tab_inactive })
             .padding([8, 20]);
 
-        row![shortcut_tab, display_tab]
+        let appearance_tab = button(text("Appearance").size(14))
+            .on_press(Message::SwitchTab(Tab::Appearance))
+            .style(if self.tab == Tab::Appearance { tab_active } else { tab_inactive })
+            .padding([8, 20]);
+
+        row![shortcut_tab, display_tab, appearance_tab]
             .spacing(2)
             .into()
     }
@@ -509,11 +749,15 @@ impl App {
             // Scale
             let scale_label = text("Scale").size(13).width(Length::Fixed(100.0));
             let scale_val = conf.scale.map(|s| format!("{s}")).unwrap_or_default();
-            let scale_input = text_input("1.0", &scale_val)
-                .on_input(move |val| Message::OutputScale(i, val))
-                .size(13)
-                .width(Length::Fixed(80.0));
-            let scale_row = row![scale_label, scale_input]
+            let idx = i;
+            let scale_widget = spinner(
+                &scale_val,
+                "1.0",
+                move |val| Message::OutputScale(idx, val),
+                Message::OutputScaleStep(i, -1),
+                Message::OutputScaleStep(i, 1),
+            );
+            let scale_row = row![scale_label, scale_widget]
                 .spacing(12)
                 .align_y(alignment::Vertical::Center);
 
@@ -585,6 +829,177 @@ impl App {
                 .padding([8, 16]),
             button(text("Refresh").size(14))
                 .on_press(Message::RefreshOutputs)
+                .style(dark_button)
+                .padding([8, 16]),
+            button(text("Close").size(14))
+                .on_press(Message::Quit)
+                .style(dark_button)
+                .padding([8, 16]),
+        ]
+        .spacing(8);
+
+        column![
+            scrollable(
+                container(content_col)
+                    .padding(iced::Padding { right: 32.0, ..iced::Padding::ZERO })
+            )
+            .height(Length::Fill),
+            buttons,
+        ]
+        .spacing(12)
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn view_appearance(&self) -> Element<'_, Message> {
+        let conf = &self.appearance;
+        let mut content_col = Column::new().spacing(16);
+
+        // ── Font ──
+        let font_title = text("Font").size(16).color(color!(0x88bb88));
+
+        let font_label = text("Family").size(13).width(Length::Fixed(100.0));
+        let font_picker = pick_list(
+            self.system_fonts.clone(),
+            Some(conf.font_family.clone()),
+            Message::AppFontFamily,
+        )
+        .text_size(13)
+        .width(Length::Fill);
+        let font_row = row![font_label, font_picker]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        let size_label = text("Size").size(13).width(Length::Fixed(100.0));
+        let size_widget = spinner(
+            &conf.font_size.to_string(),
+            "11",
+            Message::AppFontSize,
+            Message::AppFontSizeStep(-1),
+            Message::AppFontSizeStep(1),
+        );
+        let size_row = row![size_label, size_widget]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        content_col = content_col
+            .push(font_title)
+            .push(font_row)
+            .push(size_row)
+            .push(horizontal_rule(1));
+
+        // ── Gaps ──
+        let gaps_title = text("Gaps").size(16).color(color!(0x88bb88));
+
+        let inner_label = text("Inner").size(13).width(Length::Fixed(100.0));
+        let inner_widget = spinner(
+            &conf.gaps_inner.to_string(),
+            "10",
+            Message::AppGapsInner,
+            Message::AppGapsInnerStep(-1),
+            Message::AppGapsInnerStep(1),
+        );
+        let inner_row = row![inner_label, inner_widget]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        let outer_label = text("Outer").size(13).width(Length::Fixed(100.0));
+        let outer_widget = spinner(
+            &conf.gaps_outer.to_string(),
+            "5",
+            Message::AppGapsOuter,
+            Message::AppGapsOuterStep(-1),
+            Message::AppGapsOuterStep(1),
+        );
+        let outer_row = row![outer_label, outer_widget]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        content_col = content_col
+            .push(gaps_title)
+            .push(inner_row)
+            .push(outer_row)
+            .push(horizontal_rule(1));
+
+        // ── Borders ──
+        let border_title = text("Borders").size(16).color(color!(0x88bb88));
+
+        let style_label = text("Style").size(13).width(Length::Fixed(100.0));
+        let styles: Vec<String> = BorderStyle::ALL.iter().map(|s| s.to_string()).collect();
+        let style_picker = pick_list(
+            styles,
+            Some(conf.border_style.to_string()),
+            Message::AppBorderStyle,
+        )
+        .text_size(13)
+        .width(Length::Fixed(120.0));
+        let style_row = row![style_label, style_picker]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        let width_label = text("Width").size(13).width(Length::Fixed(100.0));
+        let width_widget = spinner(
+            &conf.border_width.to_string(),
+            "2",
+            Message::AppBorderWidth,
+            Message::AppBorderWidthStep(-1),
+            Message::AppBorderWidthStep(1),
+        );
+        let width_row = row![width_label, width_widget]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        content_col = content_col
+            .push(border_title)
+            .push(style_row)
+            .push(width_row)
+            .push(horizontal_rule(1));
+
+        // ── Colors ──
+        let colors_title = text("Window Colors").size(16).color(color!(0x88bb88));
+        content_col = content_col.push(colors_title);
+
+        let color_targets = [
+            ("Focused",          ColorTarget::Focused,         &conf.colors.focused),
+            ("Focused Inactive", ColorTarget::FocusedInactive, &conf.colors.focused_inactive),
+            ("Unfocused",        ColorTarget::Unfocused,       &conf.colors.unfocused),
+            ("Urgent",           ColorTarget::Urgent,          &conf.colors.urgent),
+        ];
+
+        // Column headers
+        let header = row![
+            text("").size(11).width(Length::Fixed(120.0)),
+            text("border").size(11).color(color!(0x888888)).width(Length::Fill),
+            text("bg").size(11).color(color!(0x888888)).width(Length::Fill),
+            text("text").size(11).color(color!(0x888888)).width(Length::Fill),
+            text("indicator").size(11).color(color!(0x888888)).width(Length::Fill),
+            text("child").size(11).color(color!(0x888888)).width(Length::Fill),
+        ]
+        .spacing(4);
+        content_col = content_col.push(header);
+
+        for (label, target, cs) in &color_targets {
+            let t = *target;
+            let color_row = row![
+                text(*label).size(13).width(Length::Fixed(120.0)),
+                color_input(&cs.border, move |v| Message::AppColor(t, ColorField::Border, v)),
+                color_input(&cs.background, move |v| Message::AppColor(t, ColorField::Background, v)),
+                color_input(&cs.text, move |v| Message::AppColor(t, ColorField::Text, v)),
+                color_input(&cs.indicator, move |v| Message::AppColor(t, ColorField::Indicator, v)),
+                color_input(&cs.child_border, move |v| Message::AppColor(t, ColorField::ChildBorder, v)),
+            ]
+            .spacing(4)
+            .align_y(alignment::Vertical::Center);
+            content_col = content_col.push(color_row);
+        }
+
+        let buttons = row![
+            button(text("Save").size(14))
+                .on_press(Message::SaveAppearance)
+                .style(dark_button)
+                .padding([8, 16]),
+            button(text("Save & Reload").size(14))
+                .on_press(Message::SaveAndReloadAppearance)
                 .style(dark_button)
                 .padding([8, 16]),
             button(text("Close").size(14))
