@@ -670,6 +670,7 @@ impl App {
                 match write_appearance_conf(&self.appearance) {
                     Ok(()) => {
                         save_appearance(&self.appearance);
+                        apply_appearance_live(&self.appearance);
                         self.sway_reload("Appearance saved");
                     }
                     Err(e) => self.status = format!("Error: {e}"),

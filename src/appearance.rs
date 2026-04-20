@@ -205,7 +205,7 @@ pub fn write_appearance_conf(config: &AppearanceConfig) -> Result<(), String> {
     // Colors
     fn color_line(class: &str, cs: &ColorSet) -> String {
         format!(
-            "client.{:<20} {} {} {} {} {}\n",
+            "client.{} {} {} {} {} {}\n",
             class, cs.border, cs.background, cs.text, cs.indicator, cs.child_border
         )
     }
@@ -220,6 +220,47 @@ pub fn write_appearance_conf(config: &AppearanceConfig) -> Result<(), String> {
     super::config::ensure_include()?;
 
     Ok(())
+}
+
+/// Apply appearance settings to the running sway instance via swaymsg.
+/// `swaymsg reload` doesn't reliably re-apply client.* colors to existing
+/// windows, so we send them as runtime commands.
+pub fn apply_appearance_live(config: &AppearanceConfig) {
+    let commands = vec![
+        format!("font pango:{} {}", config.font_family, config.font_size),
+        format!("gaps inner {}", config.gaps_inner),
+        format!("gaps outer {}", config.gaps_outer),
+        match config.border_style {
+            BorderStyle::None => "default_border none".into(),
+            style => format!("default_border {} {}", style, config.border_width),
+        },
+        match config.border_style {
+            BorderStyle::None => "default_floating_border none".into(),
+            style => format!("default_floating_border {} {}", style, config.border_width),
+        },
+        format!("client.focused {} {} {} {} {}",
+            config.colors.focused.border, config.colors.focused.background,
+            config.colors.focused.text, config.colors.focused.indicator,
+            config.colors.focused.child_border),
+        format!("client.focused_inactive {} {} {} {} {}",
+            config.colors.focused_inactive.border, config.colors.focused_inactive.background,
+            config.colors.focused_inactive.text, config.colors.focused_inactive.indicator,
+            config.colors.focused_inactive.child_border),
+        format!("client.unfocused {} {} {} {} {}",
+            config.colors.unfocused.border, config.colors.unfocused.background,
+            config.colors.unfocused.text, config.colors.unfocused.indicator,
+            config.colors.unfocused.child_border),
+        format!("client.urgent {} {} {} {} {}",
+            config.colors.urgent.border, config.colors.urgent.background,
+            config.colors.urgent.text, config.colors.urgent.indicator,
+            config.colors.urgent.child_border),
+    ];
+
+    for cmd in &commands {
+        let _ = std::process::Command::new("swaymsg")
+            .arg(cmd)
+            .output();
+    }
 }
 
 /// Appearance directives that oblong manages.
