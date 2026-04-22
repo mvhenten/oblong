@@ -3,6 +3,7 @@ mod snap;
 mod config;
 mod outputs;
 mod appearance;
+mod defaults;
 
 use clap::{Parser, Subcommand};
 

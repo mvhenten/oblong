@@ -6,6 +6,7 @@ use iced::{alignment, color, window, Border, Element, Font, Length, Task, Theme}
 
 use crate::appearance::*;
 use crate::config::*;
+use crate::defaults::*;
 use crate::outputs::*;
 
 const APP_FONT_BYTES: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
@@ -287,6 +288,7 @@ enum Tab {
     Shortcuts,
     Displays,
     Appearance,
+    Behavior,
 }
 
 // ── App state ───────────────────────────────────────────────
@@ -302,6 +304,8 @@ struct App {
     appearance: AppearanceConfig,
     system_fonts: Vec<String>,
     editing_color: Option<(ColorTarget, ColorField)>,
+    // Behavior
+    defaults: DefaultsConfig,
     // Shared
     status: String,
 }
@@ -335,6 +339,17 @@ impl Default for App {
 
         let appearance = load_appearance().unwrap_or_default();
         let system_fonts = list_system_fonts();
+        let defaults = load_defaults().unwrap_or_default();
+
+        // Auto-generate defaults.conf if it doesn't exist
+        let defaults_path = std::path::PathBuf::from(
+            std::env::var("HOME").unwrap_or_else(|_| ".".into()),
+        )
+        .join(".config/sway/oblong/defaults.conf");
+        if !defaults_path.exists() {
+            let _ = write_defaults_conf(&defaults);
+            apply_defaults_live(&defaults);
+        }
 
         Self {
             tab: Tab::Shortcuts,
@@ -344,6 +359,7 @@ impl Default for App {
             appearance,
             system_fonts,
             editing_color: None,
+            defaults,
             status: String::new(),
         }
     }
@@ -382,6 +398,18 @@ enum Message {
     AppColorSlider(u8, u8, u8),
     SaveAppearance,
     SaveAndReloadAppearance,
+    // Behavior
+    DefaultsFocusActivation(String),
+    DefaultsFocusFollowsMouse(String),
+    DefaultsPopupFullscreen(String),
+    DefaultsAutoBackAndForth(bool),
+    DefaultsMouseWarping(String),
+    DefaultsFloatingWidth(String),
+    DefaultsFloatingWidthStep(i32),
+    DefaultsFloatingHeight(String),
+    DefaultsFloatingHeightStep(i32),
+    SaveDefaults,
+    SaveAndReloadDefaults,
     // Shared
     Quit,
 }
@@ -685,6 +713,71 @@ impl App {
                 }
             }
 
+            // ── Behavior ────────────────────────────────
+            Message::DefaultsFocusActivation(val) => {
+                self.defaults.focus_on_window_activation = val;
+                self.status.clear();
+            }
+            Message::DefaultsFocusFollowsMouse(val) => {
+                self.defaults.focus_follows_mouse = val;
+                self.status.clear();
+            }
+            Message::DefaultsPopupFullscreen(val) => {
+                self.defaults.popup_during_fullscreen = val;
+                self.status.clear();
+            }
+            Message::DefaultsAutoBackAndForth(val) => {
+                self.defaults.workspace_auto_back_and_forth = val;
+                self.status.clear();
+            }
+            Message::DefaultsMouseWarping(val) => {
+                self.defaults.mouse_warping = val;
+                self.status.clear();
+            }
+            Message::DefaultsFloatingWidth(val) => {
+                if let Ok(w) = val.parse::<i32>() {
+                    let (_, h) = self.defaults.default_floating_size.unwrap_or((1200, 800));
+                    self.defaults.default_floating_size = Some((w, h));
+                }
+                self.status.clear();
+            }
+            Message::DefaultsFloatingWidthStep(delta) => {
+                let (w, h) = self.defaults.default_floating_size.unwrap_or((1200, 800));
+                self.defaults.default_floating_size = Some(((w + delta * 50).max(200), h));
+                self.status.clear();
+            }
+            Message::DefaultsFloatingHeight(val) => {
+                if let Ok(h) = val.parse::<i32>() {
+                    let (w, _) = self.defaults.default_floating_size.unwrap_or((1200, 800));
+                    self.defaults.default_floating_size = Some((w, h));
+                }
+                self.status.clear();
+            }
+            Message::DefaultsFloatingHeightStep(delta) => {
+                let (w, h) = self.defaults.default_floating_size.unwrap_or((1200, 800));
+                self.defaults.default_floating_size = Some((w, (h + delta * 50).max(200)));
+                self.status.clear();
+            }
+            Message::SaveDefaults => {
+                match write_defaults_conf(&self.defaults) {
+                    Ok(()) => {
+                        save_defaults(&self.defaults);
+                        self.status = "✓ Saved.".into();
+                    }
+                    Err(e) => self.status = format!("✗ Error: {e}"),
+                }
+            }
+            Message::SaveAndReloadDefaults => {
+                match write_defaults_conf(&self.defaults) {
+                    Ok(()) => {
+                        save_defaults(&self.defaults);
+                        apply_defaults_live(&self.defaults);
+                        self.sway_reload("Behavior saved");
+                    }
+                    Err(e) => self.status = format!("✗ Error: {e}"),
+                }
+            }
+
             Message::Quit => {
                 return window::get_oldest().then(|id| window::close(id.expect("no window")));
             }
@@ -737,6 +830,7 @@ impl App {
             Tab::Shortcuts => self.view_shortcuts(),
             Tab::Displays => self.view_displays(),
             Tab::Appearance => self.view_appearance(),
+            Tab::Behavior => self.view_behavior(),
         };
 
         let status = text(&self.status).size(13).color(color!(0x5a8a5a));
@@ -774,7 +868,12 @@ impl App {
             .style(if self.tab == Tab::Appearance { tab_active } else { tab_inactive })
             .padding([8, 20]);
 
-        row![shortcut_tab, display_tab, appearance_tab]
+        let behavior_tab = button(text("Behavior").size(14))
+            .on_press(Message::SwitchTab(Tab::Behavior))
+            .style(if self.tab == Tab::Behavior { tab_active } else { tab_inactive })
+            .padding([8, 20]);
+
+        row![shortcut_tab, display_tab, appearance_tab, behavior_tab]
             .spacing(2)
             .into()
     }
@@ -1198,6 +1297,193 @@ impl App {
                 .padding([8, 16]),
             button(text("Save & Reload").size(14))
                 .on_press(Message::SaveAndReloadAppearance)
+                .style(dark_button)
+                .padding([8, 16]),
+            button(text("Close").size(14))
+                .on_press(Message::Quit)
+                .style(dark_button)
+                .padding([8, 16]),
+        ]
+        .spacing(8);
+
+        column![
+            scrollable(
+                container(content_col)
+                    .padding(iced::Padding { right: 32.0, ..iced::Padding::ZERO })
+            )
+            .height(Length::Fill),
+            buttons,
+        ]
+        .spacing(12)
+        .height(Length::Fill)
+        .into()
+    }
+
+    fn view_behavior(&self) -> Element<'_, Message> {
+        let conf = &self.defaults;
+        let mut content_col = Column::new().spacing(16);
+
+        // ── Window Focus ──
+        let focus_title = text("Window Focus").size(16).color(color!(0x88bb88));
+
+        let activation_label = text("New windows").size(13).width(Length::Fixed(160.0));
+        let activation_options: Vec<String> = vec!["focus".into(), "smart".into(), "urgent".into(), "none".into()];
+        let activation_hint = text(match conf.focus_on_window_activation.as_str() {
+            "focus" => "always steal focus",
+            "smart" => "focus if on active workspace",
+            "urgent" => "mark urgent, don't focus",
+            "none" => "do nothing",
+            _ => "",
+        }).size(11).color(color!(0x888888));
+        let activation_picker = pick_list(
+            activation_options,
+            Some(conf.focus_on_window_activation.clone()),
+            Message::DefaultsFocusActivation,
+        )
+        .text_size(13)
+        .width(Length::Fixed(120.0));
+        let activation_row = row![activation_label, activation_picker, activation_hint]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        let follows_label = text("Focus follows mouse").size(13).width(Length::Fixed(160.0));
+        let follows_options: Vec<String> = vec!["yes".into(), "no".into(), "always".into()];
+        let follows_hint = text(match conf.focus_follows_mouse.as_str() {
+            "yes" => "focus window under cursor",
+            "no" => "click to focus only",
+            "always" => "aggressive — even across outputs",
+            _ => "",
+        }).size(11).color(color!(0x888888));
+        let follows_picker = pick_list(
+            follows_options,
+            Some(conf.focus_follows_mouse.clone()),
+            Message::DefaultsFocusFollowsMouse,
+        )
+        .text_size(13)
+        .width(Length::Fixed(120.0));
+        let follows_row = row![follows_label, follows_picker, follows_hint]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        let warping_label = text("Mouse warping").size(13).width(Length::Fixed(160.0));
+        let warping_options: Vec<String> = vec!["output".into(), "container".into(), "none".into()];
+        let warping_hint = text(match conf.mouse_warping.as_str() {
+            "output" => "warp to focused output",
+            "container" => "warp to focused container",
+            "none" => "never move the cursor",
+            _ => "",
+        }).size(11).color(color!(0x888888));
+        let warping_picker = pick_list(
+            warping_options,
+            Some(conf.mouse_warping.clone()),
+            Message::DefaultsMouseWarping,
+        )
+        .text_size(13)
+        .width(Length::Fixed(120.0));
+        let warping_row = row![warping_label, warping_picker, warping_hint]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        content_col = content_col
+            .push(focus_title)
+            .push(activation_row)
+            .push(follows_row)
+            .push(warping_row)
+            .push(horizontal_rule(1));
+
+        // ── Workspaces ──
+        let ws_title = text("Workspaces").size(16).color(color!(0x88bb88));
+
+        let baf_label = text("Auto back-and-forth").size(13).width(Length::Fixed(160.0));
+        let baf_options: Vec<String> = vec!["yes".into(), "no".into()];
+        let baf_hint = text(if conf.workspace_auto_back_and_forth {
+            "repeat shortcut to return"
+        } else {
+            "stay on workspace"
+        }).size(11).color(color!(0x888888));
+        let baf_picker = pick_list(
+            baf_options,
+            Some(if conf.workspace_auto_back_and_forth { "yes".to_string() } else { "no".to_string() }),
+            |val: String| Message::DefaultsAutoBackAndForth(val == "yes"),
+        )
+        .text_size(13)
+        .width(Length::Fixed(120.0));
+        let baf_row = row![baf_label, baf_picker, baf_hint]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        content_col = content_col
+            .push(ws_title)
+            .push(baf_row)
+            .push(horizontal_rule(1));
+
+        // ── Popups ──
+        let popup_title = text("Popups & Fullscreen").size(16).color(color!(0x88bb88));
+
+        let popup_label = text("Popup during fullscreen").size(13).width(Length::Fixed(160.0));
+        let popup_options: Vec<String> = vec!["smart".into(), "ignore".into(), "leave_fullscreen".into()];
+        let popup_hint = text(match conf.popup_during_fullscreen.as_str() {
+            "smart" => "show if from focused app",
+            "ignore" => "never show",
+            "leave_fullscreen" => "exit fullscreen to show",
+            _ => "",
+        }).size(11).color(color!(0x888888));
+        let popup_picker = pick_list(
+            popup_options,
+            Some(conf.popup_during_fullscreen.clone()),
+            Message::DefaultsPopupFullscreen,
+        )
+        .text_size(13)
+        .width(Length::Fixed(120.0));
+        let popup_row = row![popup_label, popup_picker, popup_hint]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        content_col = content_col
+            .push(popup_title)
+            .push(popup_row)
+            .push(horizontal_rule(1));
+
+        // ── Floating Windows ──
+        let float_title = text("Floating Windows").size(16).color(color!(0x88bb88));
+        let (fw, fh) = conf.default_floating_size.unwrap_or((1200, 800));
+
+        let fw_label = text("Default width").size(13).width(Length::Fixed(160.0));
+        let fw_widget = spinner(
+            &fw.to_string(),
+            "1200",
+            Message::DefaultsFloatingWidth,
+            Message::DefaultsFloatingWidthStep(-1),
+            Message::DefaultsFloatingWidthStep(1),
+        );
+        let fw_row = row![fw_label, fw_widget, text("px").size(11).color(color!(0x888888))]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        let fh_label = text("Default height").size(13).width(Length::Fixed(160.0));
+        let fh_widget = spinner(
+            &fh.to_string(),
+            "800",
+            Message::DefaultsFloatingHeight,
+            Message::DefaultsFloatingHeightStep(-1),
+            Message::DefaultsFloatingHeightStep(1),
+        );
+        let fh_row = row![fh_label, fh_widget, text("px").size(11).color(color!(0x888888))]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        content_col = content_col
+            .push(float_title)
+            .push(fw_row)
+            .push(fh_row);
+
+        let buttons = row![
+            button(text("Save").size(14))
+                .on_press(Message::SaveDefaults)
+                .style(dark_button)
+                .padding([8, 16]),
+            button(text("Save & Reload").size(14))
+                .on_press(Message::SaveAndReloadDefaults)
                 .style(dark_button)
                 .padding([8, 16]),
             button(text("Close").size(14))
