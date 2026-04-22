@@ -9,7 +9,6 @@ pub struct SwayOutput {
     pub name: String,
     pub make: String,
     pub model: String,
-    #[allow(dead_code)]
     pub serial: String,
     pub rect: SwayRect,
     pub modes: Vec<SwayMode>,
@@ -43,6 +42,13 @@ impl SwayMode {
 impl SwayOutput {
     pub fn description(&self) -> String {
         format!("{} {} ({})", self.make.trim(), self.model.trim(), self.name)
+    }
+
+    /// Stable identifier using make/model/serial.
+    /// Survives DP link resets (lock screen, DPMS) where port names change.
+    pub fn stable_id(&self) -> String {
+        let id = format!("{} {} {}", self.make.trim(), self.model.trim(), self.serial.trim());
+        id.trim().to_string()
     }
 
     pub fn current_mode(&self) -> Option<&SwayMode> {
@@ -128,7 +134,7 @@ pub const POSITION_RELATIONS: &[&str] = &["Left of", "Right of", "Above", "Below
 pub fn config_from_sway(output: &SwayOutput) -> OutputConfig {
     let mode = output.current_mode();
     OutputConfig {
-        name: output.name.clone(),
+        name: output.stable_id(),
         resolution: mode.map(|m| format!("{}x{}", m.width, m.height)),
         refresh: mode.map(|m| m.refresh as f64 / 1000.0),
         scale: Some(output.scale),
@@ -141,6 +147,11 @@ pub fn config_from_sway(output: &SwayOutput) -> OutputConfig {
 }
 
 /// Infer relative positions from absolute coordinates
+/// Find a SwayOutput matching a config name (which is a stable_id).
+fn find_output_by_config_name<'a>(outputs: &'a [SwayOutput], name: &str) -> Option<&'a SwayOutput> {
+    outputs.iter().find(|o| o.stable_id() == name)
+}
+
 pub fn infer_relative_positions(configs: &mut Vec<OutputConfig>, outputs: &[SwayOutput]) {
     if configs.len() < 2 {
         return;
@@ -158,9 +169,7 @@ pub fn infer_relative_positions(configs: &mut Vec<OutputConfig>, outputs: &[Sway
         .unwrap_or(0);
 
     let anchor_name = configs[anchor_idx].name.clone();
-    let anchor_rect = outputs
-        .iter()
-        .find(|o| o.name == anchor_name)
+    let anchor_rect = find_output_by_config_name(outputs, &anchor_name)
         .map(|o| &o.rect);
 
     for i in 0..configs.len() {
@@ -174,11 +183,11 @@ pub fn infer_relative_positions(configs: &mut Vec<OutputConfig>, outputs: &[Sway
             let y = *y;
             let pos = if x >= ar.x + ar.width && y.abs_diff(ar.y) as i32 <= ar.height / 2 {
                 OutputPosition::RightOf(anchor_name.clone())
-            } else if x + outputs.iter().find(|o| o.name == configs[i].name).map_or(0, |o| o.rect.width) <= ar.x
+            } else if x + find_output_by_config_name(outputs, &configs[i].name).map_or(0, |o| o.rect.width) <= ar.x
                 && y.abs_diff(ar.y) as i32 <= ar.height / 2
             {
                 OutputPosition::LeftOf(anchor_name.clone())
-            } else if y + outputs.iter().find(|o| o.name == configs[i].name).map_or(0, |o| o.rect.height) <= ar.y {
+            } else if y + find_output_by_config_name(outputs, &configs[i].name).map_or(0, |o| o.rect.height) <= ar.y {
                 OutputPosition::Above(anchor_name.clone())
             } else if y >= ar.y + ar.height {
                 OutputPosition::Below(anchor_name.clone())
@@ -224,7 +233,7 @@ pub fn write_outputs_conf(configs: &[OutputConfig]) -> Result<(), String> {
     let resolved = resolve_positions(configs);
 
     for (conf, pos) in configs.iter().zip(resolved.iter()) {
-        output.push_str(&format!("output {} {{\n", conf.name));
+        output.push_str(&format!("output \"{}\" {{\n", conf.name));
 
         if let Some(res) = &conf.resolution {
             if let Some(hz) = conf.refresh {
