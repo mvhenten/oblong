@@ -210,6 +210,84 @@ pub fn load_output_configs() -> Option<Vec<OutputConfig>> {
     serde_json::from_str(&data).ok()
 }
 
+/// Migrate saved output configs from port names (DP-7) to stable IDs.
+/// Returns true if all configs were successfully matched to live outputs.
+pub fn migrate_output_configs(
+    saved: &mut Vec<OutputConfig>,
+    live_outputs: &[SwayOutput],
+) -> bool {
+    // Build a rename map: old_name -> new stable_id
+    let mut renames: Vec<(String, String)> = Vec::new();
+
+    for conf in saved.iter() {
+        // Already a stable ID?
+        if live_outputs.iter().any(|o| o.stable_id() == conf.name) {
+            continue;
+        }
+        // Try to match by port name (might still work if no reset happened)
+        if let Some(out) = live_outputs.iter().find(|o| o.name == conf.name) {
+            renames.push((conf.name.clone(), out.stable_id()));
+            continue;
+        }
+        // Heuristic: match by resolution + approximate position
+        let candidates: Vec<&SwayOutput> = live_outputs
+            .iter()
+            .filter(|o| {
+                let already_claimed = renames.iter().any(|(_, new)| *new == o.stable_id())
+                    || saved.iter().any(|c| c.name == o.stable_id());
+                if already_claimed {
+                    return false;
+                }
+                let res_match = conf.resolution.as_deref()
+                    == o.current_mode().map(|m| format!("{}x{}", m.width, m.height)).as_deref();
+                if !res_match {
+                    return false;
+                }
+                // If we have an absolute position, check proximity
+                if let Some(OutputPosition::Absolute { x, y }) = &conf.position {
+                    let dx = (o.rect.x - x).abs();
+                    let dy = (o.rect.y - y).abs();
+                    return dx <= o.rect.width && dy <= o.rect.height;
+                }
+                true
+            })
+            .collect();
+        if candidates.len() == 1 {
+            renames.push((conf.name.clone(), candidates[0].stable_id()));
+        }
+    }
+
+    // Check if all saved configs are now matched
+    let all_matched = saved.iter().all(|c| {
+        live_outputs.iter().any(|o| o.stable_id() == c.name)
+            || renames.iter().any(|(old, _)| *old == c.name)
+    });
+
+    // Apply renames to config names and position targets
+    for (old, new) in &renames {
+        for conf in saved.iter_mut() {
+            if conf.name == *old {
+                conf.name = new.clone();
+            }
+            if let Some(pos) = &mut conf.position {
+                match pos {
+                    OutputPosition::LeftOf(t)
+                    | OutputPosition::RightOf(t)
+                    | OutputPosition::Above(t)
+                    | OutputPosition::Below(t) => {
+                        if t == old {
+                            *t = new.clone();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    all_matched
+}
+
 pub fn save_output_configs(configs: &[OutputConfig]) {
     if let Ok(json) = serde_json::to_string_pretty(configs) {
         fs::write(outputs_config_path(), json).ok();

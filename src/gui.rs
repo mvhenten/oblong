@@ -314,12 +314,20 @@ impl Default for App {
 
         let (sway_outputs, output_configs) = match query_outputs() {
             Ok(outputs) => {
-                let configs = load_output_configs().unwrap_or_else(|| {
-                    let mut cfgs: Vec<OutputConfig> =
-                        outputs.iter().map(config_from_sway).collect();
-                    infer_relative_positions(&mut cfgs, &outputs);
-                    cfgs
-                });
+                let configs = load_output_configs()
+                    .and_then(|mut cfgs| {
+                        if migrate_output_configs(&mut cfgs, &outputs) {
+                            Some(cfgs)
+                        } else {
+                            None // migration failed, regenerate
+                        }
+                    })
+                    .unwrap_or_else(|| {
+                        let mut cfgs: Vec<OutputConfig> =
+                            outputs.iter().map(config_from_sway).collect();
+                        infer_relative_positions(&mut cfgs, &outputs);
+                        cfgs
+                    });
                 (outputs, configs)
             }
             Err(_) => (vec![], vec![]),
@@ -473,7 +481,7 @@ impl App {
             Message::OutputResolution(idx, res) => {
                 if let Some(conf) = self.output_configs.get_mut(idx) {
                     // Pick highest refresh rate for this resolution
-                    if let Some(sway_out) = self.sway_outputs.iter().find(|o| o.name == conf.name) {
+                    if let Some(sway_out) = self.sway_outputs.iter().find(|o| o.stable_id() == conf.name || o.name == conf.name) {
                         let rates = refresh_rates_for_resolution(sway_out, &res);
                         conf.refresh = rates.first().copied();
                     }
@@ -854,7 +862,7 @@ impl App {
         let mut content_col = Column::new().spacing(16);
 
         for (i, conf) in self.output_configs.iter().enumerate() {
-            let sway_out = self.sway_outputs.iter().find(|o| o.name == conf.name);
+            let sway_out = self.sway_outputs.iter().find(|o| o.stable_id() == conf.name || o.name == conf.name);
             let description = sway_out
                 .map(|o| o.description())
                 .unwrap_or_else(|| conf.name.clone());
