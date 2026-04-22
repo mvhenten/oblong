@@ -13,6 +13,15 @@ const APP_FONT_BYTES: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
 const APP_FONT: Font = Font::with_name("DejaVu Sans");
 
 pub fn run() -> iced::Result {
+    // Apply behavior defaults before the window appears so oblong itself
+    // gets focus and floats correctly
+    let defaults = load_defaults().unwrap_or_default();
+    apply_defaults_live(&defaults);
+    // Ensure the for_window rule is active for this session
+    let _ = std::process::Command::new("swaymsg")
+        .arg("for_window [title=\"Oblong\"] floating enable, move position center")
+        .output();
+
     iced::application("Oblong", App::update, App::view)
         .theme(|_| Theme::Dark)
         .font(APP_FONT_BYTES)

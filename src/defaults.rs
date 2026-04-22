@@ -90,6 +90,11 @@ pub fn write_defaults_conf(config: &DefaultsConfig) -> Result<(), String> {
     // Mouse warping
     out.push_str(&format!("mouse_warping {}\n", config.mouse_warping));
 
+    // Float and center the oblong GUI itself
+    out.push_str("\n# Oblong GUI: float, center, reasonable size\n");
+    out.push_str("for_window [title=\"Oblong\"] floating enable\n");
+    out.push_str("for_window [title=\"Oblong\"] move position center\n");
+
     out.push('\n');
 
     fs::write(dir.join("defaults.conf"), &out).map_err(|e| e.to_string())?;
