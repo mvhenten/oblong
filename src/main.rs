@@ -4,6 +4,7 @@ mod config;
 mod outputs;
 mod appearance;
 mod defaults;
+mod switcher;
 
 use clap::{Parser, Subcommand};
 
@@ -21,6 +22,11 @@ enum Commands {
         /// Direction: left, right, up, down, maximize, center, restore
         direction: String,
     },
+    /// Switch focus to another window (macOS-style Cmd+Tab)
+    Switch {
+        /// Direction: next, prev
+        direction: String,
+    },
     /// Open the GUI shortcut editor
     Gui,
 }
@@ -31,6 +37,12 @@ fn main() {
     match cli.command {
         Some(Commands::Snap { direction }) => {
             if let Err(e) = snap::snap(&direction) {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
+        Some(Commands::Switch { direction }) => {
+            if let Err(e) = switcher::switch(&direction) {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }

@@ -287,6 +287,8 @@ fn default_snap_bindings() -> Vec<Binding> {
         Binding { keys: "$mod+i".into(),          command: format!("exec {bin} snap topright") },
         Binding { keys: "$mod+Shift+u".into(),    command: format!("exec {bin} snap bottomleft") },
         Binding { keys: "$mod+Shift+i".into(),    command: format!("exec {bin} snap bottomright") },
+        Binding { keys: "$mod+Tab".into(),         command: format!("exec {bin} switch next") },
+        Binding { keys: "$mod+Shift+Tab".into(),   command: format!("exec {bin} switch prev") },
     ]
 }
 
@@ -350,15 +352,9 @@ impl Default for App {
         let system_fonts = list_system_fonts();
         let defaults = load_defaults().unwrap_or_default();
 
-        // Auto-generate defaults.conf if it doesn't exist
-        let defaults_path = std::path::PathBuf::from(
-            std::env::var("HOME").unwrap_or_else(|_| ".".into()),
-        )
-        .join(".config/sway/oblong/defaults.conf");
-        if !defaults_path.exists() {
-            let _ = write_defaults_conf(&defaults);
-            apply_defaults_live(&defaults);
-        }
+        // Always regenerate defaults.conf to pick up new settings
+        let _ = write_defaults_conf(&defaults);
+        apply_defaults_live(&defaults);
 
         Self {
             tab: Tab::Shortcuts,
@@ -413,10 +409,7 @@ enum Message {
     DefaultsPopupFullscreen(String),
     DefaultsAutoBackAndForth(bool),
     DefaultsMouseWarping(String),
-    DefaultsFloatingWidth(String),
-    DefaultsFloatingWidthStep(i32),
-    DefaultsFloatingHeight(String),
-    DefaultsFloatingHeightStep(i32),
+    DefaultsFloatByDefault(bool),
     SaveDefaults,
     SaveAndReloadDefaults,
     // Shared
@@ -743,28 +736,8 @@ impl App {
                 self.defaults.mouse_warping = val;
                 self.status.clear();
             }
-            Message::DefaultsFloatingWidth(val) => {
-                if let Ok(w) = val.parse::<i32>() {
-                    let (_, h) = self.defaults.default_floating_size.unwrap_or((1200, 800));
-                    self.defaults.default_floating_size = Some((w, h));
-                }
-                self.status.clear();
-            }
-            Message::DefaultsFloatingWidthStep(delta) => {
-                let (w, h) = self.defaults.default_floating_size.unwrap_or((1200, 800));
-                self.defaults.default_floating_size = Some(((w + delta * 50).max(200), h));
-                self.status.clear();
-            }
-            Message::DefaultsFloatingHeight(val) => {
-                if let Ok(h) = val.parse::<i32>() {
-                    let (w, _) = self.defaults.default_floating_size.unwrap_or((1200, 800));
-                    self.defaults.default_floating_size = Some((w, h));
-                }
-                self.status.clear();
-            }
-            Message::DefaultsFloatingHeightStep(delta) => {
-                let (w, h) = self.defaults.default_floating_size.unwrap_or((1200, 800));
-                self.defaults.default_floating_size = Some((w, (h + delta * 50).max(200)));
+            Message::DefaultsFloatByDefault(val) => {
+                self.defaults.float_by_default = val;
                 self.status.clear();
             }
             Message::SaveDefaults => {
@@ -1455,36 +1428,28 @@ impl App {
 
         // ── Floating Windows ──
         let float_title = text("Floating Windows").size(16).color(color!(0x88bb88));
-        let (fw, fh) = conf.default_floating_size.unwrap_or((1200, 800));
 
-        let fw_label = text("Default width").size(13).width(Length::Fixed(160.0));
-        let fw_widget = spinner(
-            &fw.to_string(),
-            "1200",
-            Message::DefaultsFloatingWidth,
-            Message::DefaultsFloatingWidthStep(-1),
-            Message::DefaultsFloatingWidthStep(1),
-        );
-        let fw_row = row![fw_label, fw_widget, text("px").size(11).color(color!(0x888888))]
-            .spacing(12)
-            .align_y(alignment::Vertical::Center);
-
-        let fh_label = text("Default height").size(13).width(Length::Fixed(160.0));
-        let fh_widget = spinner(
-            &fh.to_string(),
-            "800",
-            Message::DefaultsFloatingHeight,
-            Message::DefaultsFloatingHeightStep(-1),
-            Message::DefaultsFloatingHeightStep(1),
-        );
-        let fh_row = row![fh_label, fh_widget, text("px").size(11).color(color!(0x888888))]
+        let float_label = text("Float by default").size(13).width(Length::Fixed(160.0));
+        let float_options: Vec<String> = vec!["yes".into(), "no".into()];
+        let float_hint = text(if conf.float_by_default {
+            "new windows float (macOS-like)"
+        } else {
+            "new windows tile (classic sway)"
+        }).size(11).color(color!(0x888888));
+        let float_picker = pick_list(
+            float_options,
+            Some(if conf.float_by_default { "yes".to_string() } else { "no".to_string() }),
+            |val: String| Message::DefaultsFloatByDefault(val == "yes"),
+        )
+        .text_size(13)
+        .width(Length::Fixed(120.0));
+        let float_row = row![float_label, float_picker, float_hint]
             .spacing(12)
             .align_y(alignment::Vertical::Center);
 
         content_col = content_col
             .push(float_title)
-            .push(fw_row)
-            .push(fh_row);
+            .push(float_row);
 
         let buttons = row![
             button(text("Save").size(14))

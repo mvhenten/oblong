@@ -103,6 +103,8 @@ pub fn categorize(b: &Binding) -> &'static str {
 
     if cmd.contains("oblong snap") {
         "Window Snapping"
+    } else if cmd.contains("oblong switch") {
+        "Window Switching"
     } else if cmd.contains("floating enable") && (cmd.contains("resize set") || cmd.contains("move position")) {
         "Window Snapping"
     } else if cmd.contains("floating disable") || cmd.contains("floating toggle") {
@@ -129,6 +131,7 @@ pub fn categorize(b: &Binding) -> &'static str {
 pub fn group_bindings(bindings: Vec<Binding>) -> Vec<BindingGroup> {
     let category_order = [
         "Window Snapping",
+        "Window Switching",
         "Displays",
         "Focus",
         "Move Window",
@@ -178,6 +181,17 @@ pub fn label_for_command(cmd: &str) -> String {
                 "center" => "Center (⅔ → ½ → ⅓)",
                 "restore" => "Restore Tiling",
                 other => return format!("Snap {other}"),
+            }.into();
+        }
+    }
+
+    // Switch commands
+    if cmd_lower.contains("oblong switch") {
+        if let Some(dir) = cmd_lower.split_whitespace().last() {
+            return match dir {
+                "next" => "Next Window",
+                "prev" => "Previous Window",
+                other => return format!("Switch {other}"),
             }.into();
         }
     }

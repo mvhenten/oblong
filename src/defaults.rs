@@ -7,6 +7,7 @@ use std::path::PathBuf;
 /// essential for good UX.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DefaultsConfig {
     /// New windows steal focus (instead of launching behind)
     pub focus_on_window_activation: String,
@@ -16,12 +17,10 @@ pub struct DefaultsConfig {
     pub popup_during_fullscreen: String,
     /// Repeated workspace switch goes back
     pub workspace_auto_back_and_forth: bool,
-    /// New tiling windows get a sensible default size
-    pub default_floating_size: Option<(i32, i32)>,
     /// Mouse warps to focused container
     pub mouse_warping: String,
-    /// Urgency hint timeout
-    pub urgent_timeout: u32,
+    /// Float all new windows by default (macOS-like)
+    pub float_by_default: bool,
 }
 
 impl Default for DefaultsConfig {
@@ -31,9 +30,8 @@ impl Default for DefaultsConfig {
             focus_follows_mouse: "yes".into(),
             popup_during_fullscreen: "smart".into(),
             workspace_auto_back_and_forth: true,
-            default_floating_size: Some((1200, 800)),
             mouse_warping: "output".into(),
-            urgent_timeout: 5,
+            float_by_default: true,
         }
     }
 }
@@ -90,6 +88,13 @@ pub fn write_defaults_conf(config: &DefaultsConfig) -> Result<(), String> {
     // Mouse warping
     out.push_str(&format!("mouse_warping {}\n", config.mouse_warping));
 
+    // Float all windows by default (macOS-like behavior)
+    if config.float_by_default {
+        out.push_str("\n# Float all new windows by default (macOS-like)\n");
+        out.push_str("for_window [app_id=\".*\"] floating enable\n");
+        out.push_str("for_window [title=\".*\"] floating enable\n");
+    }
+
     // Float and center the oblong GUI itself
     out.push_str("\n# Oblong GUI: float, center, reasonable size\n");
     out.push_str("for_window [title=\"Oblong\"] floating enable\n");
@@ -106,7 +111,7 @@ pub fn write_defaults_conf(config: &DefaultsConfig) -> Result<(), String> {
 
 /// Apply defaults to the running sway instance.
 pub fn apply_defaults_live(config: &DefaultsConfig) {
-    let commands = vec![
+    let mut commands = vec![
         format!("focus_on_window_activation {}", config.focus_on_window_activation),
         format!("focus_follows_mouse {}", config.focus_follows_mouse),
         format!("popup_during_fullscreen {}", config.popup_during_fullscreen),
@@ -116,6 +121,11 @@ pub fn apply_defaults_live(config: &DefaultsConfig) {
         ),
         format!("mouse_warping {}", config.mouse_warping),
     ];
+
+    if config.float_by_default {
+        commands.push("for_window [app_id=\".*\"] floating enable".into());
+        commands.push("for_window [title=\".*\"] floating enable".into());
+    }
 
     for cmd in &commands {
         let _ = std::process::Command::new("swaymsg")
