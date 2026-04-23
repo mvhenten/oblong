@@ -15,10 +15,6 @@ const APP_FONT_BYTES: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
 const APP_FONT: Font = Font::with_name("DejaVu Sans");
 
 pub fn run() -> iced::Result {
-    // Apply behavior defaults before the window appears so oblong itself
-    // gets focus and floats correctly
-    let defaults = load_defaults().unwrap_or_default();
-    apply_defaults_live(&defaults);
     // Ensure the for_window rule is active for this session
     let _ = std::process::Command::new("swaymsg")
         .arg("for_window [app_id=\"Oblong\"] floating enable, move position center")
@@ -571,7 +567,8 @@ impl Default for App {
 
         // Always regenerate defaults.conf to pick up new settings
         let _ = write_defaults_conf(&defaults);
-        apply_defaults_live(&defaults);
+        // Don't call apply_defaults_live here — it re-floats all windows
+        // including the terminal that launched us. The conf file handles it.
 
         Self {
             tab: Tab::Shortcuts,
@@ -631,6 +628,10 @@ enum Message {
     DefaultsMouseWarping(String),
     DefaultsFloatByDefault(bool),
     DefaultsSuperCopyPaste(bool),
+    DefaultsScreenBlank(u32),
+    DefaultsScreenBlankStep(i32),
+    DefaultsLockTimeout(u32),
+    DefaultsLockTimeoutStep(i32),
     SaveDefaults,
     SaveAndReloadDefaults,
     // Shared
@@ -976,6 +977,24 @@ impl App {
             }
             Message::DefaultsSuperCopyPaste(val) => {
                 self.defaults.super_copy_paste = val;
+                self.status.clear();
+            }
+            Message::DefaultsScreenBlank(val) => {
+                self.defaults.screen_blank_timeout = val;
+                self.status.clear();
+            }
+            Message::DefaultsScreenBlankStep(delta) => {
+                self.defaults.screen_blank_timeout =
+                    (self.defaults.screen_blank_timeout as i32 + delta).max(0) as u32;
+                self.status.clear();
+            }
+            Message::DefaultsLockTimeout(val) => {
+                self.defaults.lock_timeout = val;
+                self.status.clear();
+            }
+            Message::DefaultsLockTimeoutStep(delta) => {
+                self.defaults.lock_timeout =
+                    (self.defaults.lock_timeout as i32 + delta).max(0) as u32;
                 self.status.clear();
             }
             Message::SaveDefaults => match write_defaults_conf(&self.defaults) {
@@ -1855,7 +1874,65 @@ impl App {
             .spacing(12)
             .align_y(alignment::Vertical::Center);
 
-        content_col = content_col.push(super_title).push(cp_row);
+        content_col = content_col
+            .push(super_title)
+            .push(cp_row)
+            .push(horizontal_rule(1));
+
+        // ── Screen Lock & Blanking ──
+        let lock_title = text("Screen Lock & Blanking")
+            .size(16)
+            .color(color!(0x88bb88));
+
+        let blank_label = text("Blank screen after")
+            .size(13)
+            .width(Length::Fixed(160.0));
+        let blank_hint = text(match conf.screen_blank_timeout {
+            0 => "disabled".to_string(),
+            t => format!("{}m {}s", t / 60, t % 60),
+        })
+        .size(11)
+        .color(color!(0x888888));
+        let blank_widget = spinner(
+            &if conf.screen_blank_timeout == 0 {
+                "0".into()
+            } else {
+                conf.screen_blank_timeout.to_string()
+            },
+            "300",
+            |val| Message::DefaultsScreenBlank(val.parse::<u32>().unwrap_or(0)),
+            Message::DefaultsScreenBlankStep(-30),
+            Message::DefaultsScreenBlankStep(30),
+        );
+        let blank_row = row![blank_label, blank_widget, blank_hint]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        let lock_label = text("Lock screen after")
+            .size(13)
+            .width(Length::Fixed(160.0));
+        let lock_hint = text(match conf.lock_timeout {
+            0 => "disabled".to_string(),
+            t => format!("{}m {}s", t / 60, t % 60),
+        })
+        .size(11)
+        .color(color!(0x888888));
+        let lock_widget = spinner(
+            &if conf.lock_timeout == 0 {
+                "0".into()
+            } else {
+                conf.lock_timeout.to_string()
+            },
+            "600",
+            |val| Message::DefaultsLockTimeout(val.parse::<u32>().unwrap_or(0)),
+            Message::DefaultsLockTimeoutStep(-30),
+            Message::DefaultsLockTimeoutStep(30),
+        );
+        let lock_row = row![lock_label, lock_widget, lock_hint]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        content_col = content_col.push(lock_title).push(blank_row).push(lock_row);
 
         let buttons = row![
             button(text("Close").size(14))

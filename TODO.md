@@ -2,12 +2,12 @@
 
 ## Now (this session)
 - [x] Create GitHub Actions CI (build, clippy, fmt)
-- [ ] Fix clippy warnings and rustfmt so CI passes
-- [ ] Add release workflow (tag → build → GitHub Release with binary)
+- [x] Fix clippy warnings and rustfmt so CI passes
+- [x] Add release workflow (tag → build → GitHub Release with binary)
+- [x] Update button bars to follow HIG (right-aligned, proper order, accent styles)
+- [x] Clean up repo, commit, push
+- [x] Screenshots in README via orphan branch
 - [ ] Move swayidle config into oblong Behavior tab (timeouts, enable/disable)
-- [ ] Update button bars to follow HIG (right-aligned, proper order, accent styles)
-- [ ] Clean up repo (remove bluetooth scripts, update .gitignore)
-- [ ] Commit and push everything
 
 ## Soon
 - [ ] Publish to crates.io (needs metadata in Cargo.toml)

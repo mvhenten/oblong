@@ -23,6 +23,10 @@ pub struct DefaultsConfig {
     pub float_by_default: bool,
     /// macOS-style Super+C/V/A/Z shortcuts
     pub super_copy_paste: bool,
+    /// Screen blank timeout in seconds (0 = disabled)
+    pub screen_blank_timeout: u32,
+    /// Lock screen timeout in seconds (0 = disabled)
+    pub lock_timeout: u32,
 }
 
 impl Default for DefaultsConfig {
@@ -35,6 +39,8 @@ impl Default for DefaultsConfig {
             mouse_warping: "output".into(),
             float_by_default: true,
             super_copy_paste: false,
+            screen_blank_timeout: 300,
+            lock_timeout: 600,
         }
     }
 }
@@ -136,6 +142,27 @@ pub fn write_defaults_conf(config: &DefaultsConfig) -> Result<(), String> {
         out.push_str(&format!("bindsym --no-repeat $mod+x exec {} cut\n", h));
     }
 
+    // Screen blanking & auto-lock via swayidle
+    if config.screen_blank_timeout > 0 || config.lock_timeout > 0 {
+        out.push_str("\n# Screen blanking & auto-lock\n");
+        let mut idle_args = String::from("exec swayidle -w");
+        if config.screen_blank_timeout > 0 {
+            idle_args.push_str(&format!(
+                " timeout {} 'swaymsg \"output * power off\"' resume 'swaymsg \"output * power on\"'",
+                config.screen_blank_timeout
+            ));
+        }
+        if config.lock_timeout > 0 {
+            idle_args.push_str(&format!(
+                " timeout {} 'swaylock -c 1a1a1a'",
+                config.lock_timeout
+            ));
+        }
+        idle_args.push_str(" before-sleep 'swaylock -c 1a1a1a'");
+        out.push_str(&idle_args);
+        out.push('\n');
+    }
+
     out.push('\n');
 
     fs::write(dir.join("defaults.conf"), &out).map_err(|e| e.to_string())?;
@@ -234,5 +261,29 @@ pub fn apply_defaults_live(config: &DefaultsConfig) {
 
     for cmd in &commands {
         let _ = std::process::Command::new("swaymsg").arg(cmd).output();
+    }
+
+    // Restart swayidle with new timeouts
+    let _ = std::process::Command::new("pkill").arg("swayidle").output();
+    if config.screen_blank_timeout > 0 || config.lock_timeout > 0 {
+        let mut args = vec!["-w".to_string()];
+        if config.screen_blank_timeout > 0 {
+            args.extend([
+                "timeout".into(),
+                config.screen_blank_timeout.to_string(),
+                "swaymsg \"output * power off\"".into(),
+                "resume".into(),
+                "swaymsg \"output * power on\"".into(),
+            ]);
+        }
+        if config.lock_timeout > 0 {
+            args.extend([
+                "timeout".into(),
+                config.lock_timeout.to_string(),
+                "swaylock -c 1a1a1a".into(),
+            ]);
+        }
+        args.extend(["before-sleep".into(), "swaylock -c 1a1a1a".into()]);
+        let _ = std::process::Command::new("swayidle").args(&args).spawn();
     }
 }
