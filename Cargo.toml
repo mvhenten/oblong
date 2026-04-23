@@ -2,8 +2,13 @@
 name = "oblong"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "macOS-like window management for Sway — snap, MRU switching, Super key shortcuts, and a GUI config editor"
+license = "MIT"
+repository = "https://github.com/mvhenten/oblong"
+readme = "README.md"
+keywords = ["sway", "wayland", "window-manager", "tiling", "macos"]
+categories = ["command-line-utilities"]
+exclude = [".github/", "TODO.md", "screenshots/"]
 
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }

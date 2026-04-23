@@ -7,7 +7,7 @@
 - [x] Update button bars to follow HIG (right-aligned, proper order, accent styles)
 - [x] Clean up repo, commit, push
 - [x] Screenshots in README via orphan branch
-- [ ] Move swayidle config into oblong Behavior tab (timeouts, enable/disable)
+- [x] Move swayidle config into oblong Behavior tab (timeouts, enable/disable)
 
 ## Soon
 - [ ] Publish to crates.io (needs metadata in Cargo.toml)
