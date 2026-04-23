@@ -1,9 +1,9 @@
-mod gui;
-mod snap;
-mod config;
-mod outputs;
 mod appearance;
+mod config;
 mod defaults;
+mod gui;
+mod outputs;
+mod snap;
 mod switcher;
 
 use clap::{Parser, Subcommand};

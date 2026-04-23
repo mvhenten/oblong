@@ -20,7 +20,10 @@ pub struct BindingGroup {
 
 pub fn sway_config_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".config").join("sway").join("config")
+    PathBuf::from(home)
+        .join(".config")
+        .join("sway")
+        .join("config")
 }
 
 pub fn config_dir() -> PathBuf {
@@ -83,7 +86,7 @@ pub fn parse_sway_bindings(content: &str) -> Vec<Binding> {
             }
 
             let full = full.trim().to_string();
-            if let Some(split_pos) = full.find(|c: char| c == ' ' || c == '\t') {
+            if let Some(split_pos) = full.find([' ', '\t']) {
                 let keys = full[..split_pos].trim().to_string();
                 let command = full[split_pos..].trim().to_string();
                 bindings.push(Binding { keys, command });
@@ -105,9 +108,11 @@ pub fn categorize(b: &Binding) -> &'static str {
         "Window Snapping"
     } else if cmd.contains("oblong switch") {
         "Window Switching"
-    } else if cmd.contains("floating enable") && (cmd.contains("resize set") || cmd.contains("move position")) {
-        "Window Snapping"
-    } else if cmd.contains("floating disable") || cmd.contains("floating toggle") {
+    } else if (cmd.contains("floating enable")
+        && (cmd.contains("resize set") || cmd.contains("move position")))
+        || cmd.contains("floating disable")
+        || cmd.contains("floating toggle")
+    {
         "Window Snapping"
     } else if cmd.contains("move container to output") {
         "Displays"
@@ -119,9 +124,7 @@ pub fn categorize(b: &Binding) -> &'static str {
         "Workspaces"
     } else if cmd.starts_with("layout ") || cmd.starts_with("fullscreen") {
         "Layout"
-    } else if cmd.starts_with("exec ") {
-        "Apps & Commands"
-    } else if cmd == "kill" {
+    } else if cmd.starts_with("exec ") || cmd == "kill" {
         "Apps & Commands"
     } else {
         "Other"
@@ -181,7 +184,8 @@ pub fn label_for_command(cmd: &str) -> String {
                 "center" => "Center (⅔ → ½ → ⅓)",
                 "restore" => "Restore Tiling",
                 other => return format!("Snap {other}"),
-            }.into();
+            }
+            .into();
         }
     }
 
@@ -192,7 +196,8 @@ pub fn label_for_command(cmd: &str) -> String {
                 "next" => "Next Window",
                 "prev" => "Previous Window",
                 other => return format!("Switch {other}"),
-            }.into();
+            }
+            .into();
         }
     }
 
@@ -200,7 +205,10 @@ pub fn label_for_command(cmd: &str) -> String {
     if cmd_lower.contains("width 100ppt height 100ppt") && cmd_lower.contains("move position 0 0") {
         return "Maximize".into();
     }
-    if cmd_lower.contains("width 50ppt height 100ppt") && cmd_lower.contains("position 0 0") && !cmd_lower.contains("50ppt 0") {
+    if cmd_lower.contains("width 50ppt height 100ppt")
+        && cmd_lower.contains("position 0 0")
+        && !cmd_lower.contains("50ppt 0")
+    {
         return "Left Half".into();
     }
     if cmd_lower.contains("width 50ppt height 100ppt") && cmd_lower.contains("50ppt 0") {
@@ -212,25 +220,51 @@ pub fn label_for_command(cmd: &str) -> String {
     if cmd_lower.contains("width 100ppt height 50ppt") && cmd_lower.contains("0 50ppt") {
         return "Bottom Half".into();
     }
-    if cmd_lower == "floating disable" { return "Restore Tiling".into(); }
-    if cmd_lower == "floating toggle" { return "Toggle Floating".into(); }
-    if cmd_lower == "fullscreen toggle" { return "Toggle Fullscreen".into(); }
+    if cmd_lower == "floating disable" {
+        return "Restore Tiling".into();
+    }
+    if cmd_lower == "floating toggle" {
+        return "Toggle Floating".into();
+    }
+    if cmd_lower == "fullscreen toggle" {
+        return "Toggle Fullscreen".into();
+    }
 
     // Displays
-    if cmd_lower.contains("output left") { return "Move to Prev Display".into(); }
-    if cmd_lower.contains("output right") { return "Move to Next Display".into(); }
+    if cmd_lower.contains("output left") {
+        return "Move to Prev Display".into();
+    }
+    if cmd_lower.contains("output right") {
+        return "Move to Next Display".into();
+    }
 
     // Focus
-    if cmd_lower == "focus left" { return "Focus Left".into(); }
-    if cmd_lower == "focus right" { return "Focus Right".into(); }
-    if cmd_lower == "focus up" { return "Focus Up".into(); }
-    if cmd_lower == "focus down" { return "Focus Down".into(); }
+    if cmd_lower == "focus left" {
+        return "Focus Left".into();
+    }
+    if cmd_lower == "focus right" {
+        return "Focus Right".into();
+    }
+    if cmd_lower == "focus up" {
+        return "Focus Up".into();
+    }
+    if cmd_lower == "focus down" {
+        return "Focus Down".into();
+    }
 
     // Move
-    if cmd_lower == "move left" { return "Move Left".into(); }
-    if cmd_lower == "move right" { return "Move Right".into(); }
-    if cmd_lower == "move up" { return "Move Up".into(); }
-    if cmd_lower == "move down" { return "Move Down".into(); }
+    if cmd_lower == "move left" {
+        return "Move Left".into();
+    }
+    if cmd_lower == "move right" {
+        return "Move Right".into();
+    }
+    if cmd_lower == "move up" {
+        return "Move Up".into();
+    }
+    if cmd_lower == "move down" {
+        return "Move Down".into();
+    }
 
     // Workspaces
     if let Some(n) = cmd_lower.strip_prefix("workspace number ") {
@@ -240,20 +274,40 @@ pub fn label_for_command(cmd: &str) -> String {
         let n = cmd_lower.split_whitespace().last().unwrap_or("?");
         return format!("Move to Workspace {n}");
     }
-    if cmd_lower == "workspace back_and_forth" { return "Last Workspace".into(); }
+    if cmd_lower == "workspace back_and_forth" {
+        return "Last Workspace".into();
+    }
 
     // Layout
-    if cmd_lower == "layout stacking" { return "Stacking Layout".into(); }
-    if cmd_lower == "layout tabbed" { return "Tabbed Layout".into(); }
-    if cmd_lower == "layout toggle split" { return "Toggle Split".into(); }
+    if cmd_lower == "layout stacking" {
+        return "Stacking Layout".into();
+    }
+    if cmd_lower == "layout tabbed" {
+        return "Tabbed Layout".into();
+    }
+    if cmd_lower == "layout toggle split" {
+        return "Toggle Split".into();
+    }
 
     // Apps
-    if cmd_lower == "kill" { return "Close Window".into(); }
-    if cmd_lower.contains("$launcher") || cmd_lower.contains("fuzzel") { return "App Launcher".into(); }
-    if cmd_lower.contains("$term") || cmd_lower.contains("terminal") { return "Terminal".into(); }
-    if cmd_lower.contains("grim") && cmd_lower.contains("slurp") { return "Screenshot (region)".into(); }
-    if cmd_lower.contains("grim") { return "Screenshot".into(); }
-    if cmd_lower.contains("swaymsg exit") { return "Exit Sway".into(); }
+    if cmd_lower == "kill" {
+        return "Close Window".into();
+    }
+    if cmd_lower.contains("$launcher") || cmd_lower.contains("fuzzel") {
+        return "App Launcher".into();
+    }
+    if cmd_lower.contains("$term") || cmd_lower.contains("terminal") {
+        return "Terminal".into();
+    }
+    if cmd_lower.contains("grim") && cmd_lower.contains("slurp") {
+        return "Screenshot (region)".into();
+    }
+    if cmd_lower.contains("grim") {
+        return "Screenshot".into();
+    }
+    if cmd_lower.contains("swaymsg exit") {
+        return "Exit Sway".into();
+    }
 
     cmd.to_string()
 }
@@ -282,7 +336,10 @@ pub fn ensure_include() -> Result<(), String> {
     }
 
     let mut updated = content.trim_end().to_string();
-    updated.push_str(&format!("\n\n# ── Oblong window management ──\n{}\n", INCLUDE_LINE));
+    updated.push_str(&format!(
+        "\n\n# ── Oblong window management ──\n{}\n",
+        INCLUDE_LINE
+    ));
     fs::write(&main_config, updated).map_err(|e| e.to_string())?;
 
     Ok(())
@@ -318,8 +375,7 @@ pub fn comment_out_conflicts(keys_to_disable: &[String]) -> Result<usize, String
 
         let conflict = if let Some(rest) = trimmed.strip_prefix("bindsym ") {
             keys_to_disable.iter().any(|key| {
-                rest.starts_with(&format!("{} ", key))
-                    || rest.starts_with(&format!("{}\\" , key))
+                rest.starts_with(&format!("{} ", key)) || rest.starts_with(&format!("{}\\", key))
             })
         } else {
             false
@@ -356,16 +412,17 @@ pub fn write_sway_config(bindings: &[&Binding]) -> Result<(), String> {
 
     let conf_file = oblong_dir.join("shortcuts.conf");
 
-    let mut output = String::from(
-        "# ── Oblong — auto-generated, do not edit by hand ──\n\n",
-    );
+    let mut output = String::from("# ── Oblong — auto-generated, do not edit by hand ──\n\n");
 
     for b in bindings {
         if b.keys.trim().is_empty() {
             continue;
         }
         let label = label_for_command(&b.command);
-        output.push_str(&format!("# {}\nbindsym {} {}\n\n", label, b.keys, b.command));
+        output.push_str(&format!(
+            "# {}\nbindsym {} {}\n\n",
+            label, b.keys, b.command
+        ));
     }
 
     fs::write(&conf_file, &output).map_err(|e| e.to_string())?;

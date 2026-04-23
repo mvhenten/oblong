@@ -23,11 +23,8 @@ pub enum BorderStyle {
 }
 
 impl BorderStyle {
-    pub const ALL: &'static [BorderStyle] = &[
-        BorderStyle::Pixel,
-        BorderStyle::Normal,
-        BorderStyle::None,
-    ];
+    pub const ALL: &'static [BorderStyle] =
+        &[BorderStyle::Pixel, BorderStyle::Normal, BorderStyle::None];
 }
 
 impl std::fmt::Display for BorderStyle {
@@ -181,10 +178,14 @@ pub fn write_appearance_conf(config: &AppearanceConfig) -> Result<(), String> {
     let dir = sway_oblong_dir();
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
-    let mut out = String::from("# ── Oblong appearance — auto-generated, do not edit by hand ──\n\n");
+    let mut out =
+        String::from("# ── Oblong appearance — auto-generated, do not edit by hand ──\n\n");
 
     // Font
-    out.push_str(&format!("font pango:{} {}\n\n", config.font_family, config.font_size));
+    out.push_str(&format!(
+        "font pango:{} {}\n\n",
+        config.font_family, config.font_size
+    ));
 
     // Gaps
     out.push_str(&format!("gaps inner {}\n", config.gaps_inner));
@@ -197,8 +198,14 @@ pub fn write_appearance_conf(config: &AppearanceConfig) -> Result<(), String> {
             out.push_str("default_floating_border none\n\n");
         }
         style => {
-            out.push_str(&format!("default_border {} {}\n", style, config.border_width));
-            out.push_str(&format!("default_floating_border {} {}\n\n", style, config.border_width));
+            out.push_str(&format!(
+                "default_border {} {}\n",
+                style, config.border_width
+            ));
+            out.push_str(&format!(
+                "default_floating_border {} {}\n\n",
+                style, config.border_width
+            ));
         }
     }
 
@@ -210,7 +217,10 @@ pub fn write_appearance_conf(config: &AppearanceConfig) -> Result<(), String> {
         )
     }
     out.push_str(&color_line("focused", &config.colors.focused));
-    out.push_str(&color_line("focused_inactive", &config.colors.focused_inactive));
+    out.push_str(&color_line(
+        "focused_inactive",
+        &config.colors.focused_inactive,
+    ));
     out.push_str(&color_line("unfocused", &config.colors.unfocused));
     out.push_str(&color_line("urgent", &config.colors.urgent));
 
@@ -238,28 +248,42 @@ pub fn apply_appearance_live(config: &AppearanceConfig) {
             BorderStyle::None => "default_floating_border none".into(),
             style => format!("default_floating_border {} {}", style, config.border_width),
         },
-        format!("client.focused {} {} {} {} {}",
-            config.colors.focused.border, config.colors.focused.background,
-            config.colors.focused.text, config.colors.focused.indicator,
-            config.colors.focused.child_border),
-        format!("client.focused_inactive {} {} {} {} {}",
-            config.colors.focused_inactive.border, config.colors.focused_inactive.background,
-            config.colors.focused_inactive.text, config.colors.focused_inactive.indicator,
-            config.colors.focused_inactive.child_border),
-        format!("client.unfocused {} {} {} {} {}",
-            config.colors.unfocused.border, config.colors.unfocused.background,
-            config.colors.unfocused.text, config.colors.unfocused.indicator,
-            config.colors.unfocused.child_border),
-        format!("client.urgent {} {} {} {} {}",
-            config.colors.urgent.border, config.colors.urgent.background,
-            config.colors.urgent.text, config.colors.urgent.indicator,
-            config.colors.urgent.child_border),
+        format!(
+            "client.focused {} {} {} {} {}",
+            config.colors.focused.border,
+            config.colors.focused.background,
+            config.colors.focused.text,
+            config.colors.focused.indicator,
+            config.colors.focused.child_border
+        ),
+        format!(
+            "client.focused_inactive {} {} {} {} {}",
+            config.colors.focused_inactive.border,
+            config.colors.focused_inactive.background,
+            config.colors.focused_inactive.text,
+            config.colors.focused_inactive.indicator,
+            config.colors.focused_inactive.child_border
+        ),
+        format!(
+            "client.unfocused {} {} {} {} {}",
+            config.colors.unfocused.border,
+            config.colors.unfocused.background,
+            config.colors.unfocused.text,
+            config.colors.unfocused.indicator,
+            config.colors.unfocused.child_border
+        ),
+        format!(
+            "client.urgent {} {} {} {} {}",
+            config.colors.urgent.border,
+            config.colors.urgent.background,
+            config.colors.urgent.text,
+            config.colors.urgent.indicator,
+            config.colors.urgent.child_border
+        ),
     ];
 
     for cmd in &commands {
-        let _ = std::process::Command::new("swaymsg")
-            .arg(cmd)
-            .output();
+        let _ = std::process::Command::new("swaymsg").arg(cmd).output();
     }
 }
 

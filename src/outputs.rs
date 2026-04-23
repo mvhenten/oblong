@@ -47,15 +47,20 @@ impl SwayOutput {
     /// Stable identifier using make/model/serial.
     /// Survives DP link resets (lock screen, DPMS) where port names change.
     pub fn stable_id(&self) -> String {
-        let id = format!("{} {} {}", self.make.trim(), self.model.trim(), self.serial.trim());
+        let id = format!(
+            "{} {} {}",
+            self.make.trim(),
+            self.model.trim(),
+            self.serial.trim()
+        );
         id.trim().to_string()
     }
 
     pub fn current_mode(&self) -> Option<&SwayMode> {
         // The current mode matches the rect dimensions
-        self.modes.iter().find(|m| {
-            m.width == self.rect.width && m.height == self.rect.height
-        })
+        self.modes
+            .iter()
+            .find(|m| m.width == self.rect.width && m.height == self.rect.height)
     }
 }
 
@@ -79,10 +84,10 @@ pub fn query_outputs() -> Result<Vec<SwayOutput>, String> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutputConfig {
     pub name: String,
-    pub resolution: Option<String>,  // e.g. "2560x1440"
-    pub refresh: Option<f64>,        // e.g. 59.951
-    pub scale: Option<f64>,          // e.g. 1.0
-    pub transform: Option<String>,   // e.g. "normal", "90", "180", "270"
+    pub resolution: Option<String>, // e.g. "2560x1440"
+    pub refresh: Option<f64>,       // e.g. 59.951
+    pub scale: Option<f64>,         // e.g. 1.0
+    pub transform: Option<String>,  // e.g. "normal", "90", "180", "270"
     pub position: Option<OutputPosition>,
 }
 
@@ -152,7 +157,7 @@ fn find_output_by_config_name<'a>(outputs: &'a [SwayOutput], name: &str) -> Opti
     outputs.iter().find(|o| o.stable_id() == name)
 }
 
-pub fn infer_relative_positions(configs: &mut Vec<OutputConfig>, outputs: &[SwayOutput]) {
+pub fn infer_relative_positions(configs: &mut [OutputConfig], outputs: &[SwayOutput]) {
     if configs.len() < 2 {
         return;
     }
@@ -169,9 +174,9 @@ pub fn infer_relative_positions(configs: &mut Vec<OutputConfig>, outputs: &[Sway
         .unwrap_or(0);
 
     let anchor_name = configs[anchor_idx].name.clone();
-    let anchor_rect = find_output_by_config_name(outputs, &anchor_name)
-        .map(|o| &o.rect);
+    let anchor_rect = find_output_by_config_name(outputs, &anchor_name).map(|o| &o.rect);
 
+    #[allow(clippy::needless_range_loop)]
     for i in 0..configs.len() {
         if i == anchor_idx {
             continue;
@@ -183,11 +188,16 @@ pub fn infer_relative_positions(configs: &mut Vec<OutputConfig>, outputs: &[Sway
             let y = *y;
             let pos = if x >= ar.x + ar.width && y.abs_diff(ar.y) as i32 <= ar.height / 2 {
                 OutputPosition::RightOf(anchor_name.clone())
-            } else if x + find_output_by_config_name(outputs, &configs[i].name).map_or(0, |o| o.rect.width) <= ar.x
+            } else if x + find_output_by_config_name(outputs, &configs[i].name)
+                .map_or(0, |o| o.rect.width)
+                <= ar.x
                 && y.abs_diff(ar.y) as i32 <= ar.height / 2
             {
                 OutputPosition::LeftOf(anchor_name.clone())
-            } else if y + find_output_by_config_name(outputs, &configs[i].name).map_or(0, |o| o.rect.height) <= ar.y {
+            } else if y + find_output_by_config_name(outputs, &configs[i].name)
+                .map_or(0, |o| o.rect.height)
+                <= ar.y
+            {
                 OutputPosition::Above(anchor_name.clone())
             } else if y >= ar.y + ar.height {
                 OutputPosition::Below(anchor_name.clone())
@@ -212,10 +222,7 @@ pub fn load_output_configs() -> Option<Vec<OutputConfig>> {
 
 /// Migrate saved output configs from port names (DP-7) to stable IDs.
 /// Returns true if all configs were successfully matched to live outputs.
-pub fn migrate_output_configs(
-    saved: &mut Vec<OutputConfig>,
-    live_outputs: &[SwayOutput],
-) -> bool {
+pub fn migrate_output_configs(saved: &mut [OutputConfig], live_outputs: &[SwayOutput]) -> bool {
     // Build a rename map: old_name -> new stable_id
     let mut renames: Vec<(String, String)> = Vec::new();
 
@@ -239,7 +246,9 @@ pub fn migrate_output_configs(
                     return false;
                 }
                 let res_match = conf.resolution.as_deref()
-                    == o.current_mode().map(|m| format!("{}x{}", m.width, m.height)).as_deref();
+                    == o.current_mode()
+                        .map(|m| format!("{}x{}", m.width, m.height))
+                        .as_deref();
                 if !res_match {
                     return false;
                 }
@@ -269,17 +278,15 @@ pub fn migrate_output_configs(
             if conf.name == *old {
                 conf.name = new.clone();
             }
-            if let Some(pos) = &mut conf.position {
-                match pos {
-                    OutputPosition::LeftOf(t)
-                    | OutputPosition::RightOf(t)
-                    | OutputPosition::Above(t)
-                    | OutputPosition::Below(t) => {
-                        if t == old {
-                            *t = new.clone();
-                        }
-                    }
-                    _ => {}
+            if let Some(
+                OutputPosition::LeftOf(t)
+                | OutputPosition::RightOf(t)
+                | OutputPosition::Above(t)
+                | OutputPosition::Below(t),
+            ) = &mut conf.position
+            {
+                if t == old {
+                    *t = new.clone();
                 }
             }
         }
@@ -297,15 +304,14 @@ pub fn save_output_configs(configs: &[OutputConfig]) {
 // ── Sway config generation ─────────────────────────────────
 
 pub fn write_outputs_conf(configs: &[OutputConfig]) -> Result<(), String> {
-    let oblong_dir = std::path::PathBuf::from(
-        std::env::var("HOME").unwrap_or_else(|_| ".".into()),
-    )
-    .join(".config")
-    .join("sway")
-    .join("oblong");
+    let oblong_dir = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into()))
+        .join(".config")
+        .join("sway")
+        .join("oblong");
     fs::create_dir_all(&oblong_dir).map_err(|e| e.to_string())?;
 
-    let mut output = String::from("# ── Oblong outputs — auto-generated, do not edit by hand ──\n\n");
+    let mut output =
+        String::from("# ── Oblong outputs — auto-generated, do not edit by hand ──\n\n");
 
     // Resolve relative positions to absolute for sway config
     let resolved = resolve_positions(configs);
@@ -365,6 +371,7 @@ fn resolve_positions(configs: &[OutputConfig]) -> Vec<Option<(i32, i32)>> {
     // Second pass: resolve relative positions
     // Iterate a few times to handle chains
     for _ in 0..configs.len() {
+        #[allow(clippy::needless_range_loop)]
         for i in 0..configs.len() {
             if positions[i].is_some() {
                 continue;

@@ -6,8 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// State file tracks what we last did, so repeated presses cycle through sizes.
 fn state_path() -> PathBuf {
-    let dir = std::env::var("XDG_RUNTIME_DIR")
-        .unwrap_or_else(|_| "/tmp".into());
+    let dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_else(|_| "/tmp".into());
     PathBuf::from(dir).join("oblong-state")
 }
 
@@ -31,7 +30,11 @@ fn load_state() -> Option<SnapState> {
     let direction = lines.next()?.to_string();
     let step: usize = lines.next()?.parse().ok()?;
     let timestamp: u64 = lines.next()?.parse().ok()?;
-    Some(SnapState { direction, step, timestamp })
+    Some(SnapState {
+        direction,
+        step,
+        timestamp,
+    })
 }
 
 fn save_state(direction: &str, step: usize) {
@@ -54,49 +57,184 @@ struct SnapGeometry {
 fn edge_cycle(direction: &str) -> Vec<SnapGeometry> {
     match direction {
         "left" => vec![
-            SnapGeometry { w: "50ppt",  h: "100ppt", x: "0", y: "0" },
-            SnapGeometry { w: "33ppt",  h: "100ppt", x: "0", y: "0" },
-            SnapGeometry { w: "67ppt",  h: "100ppt", x: "0", y: "0" },
+            SnapGeometry {
+                w: "50ppt",
+                h: "100ppt",
+                x: "0",
+                y: "0",
+            },
+            SnapGeometry {
+                w: "33ppt",
+                h: "100ppt",
+                x: "0",
+                y: "0",
+            },
+            SnapGeometry {
+                w: "67ppt",
+                h: "100ppt",
+                x: "0",
+                y: "0",
+            },
         ],
         "right" => vec![
-            SnapGeometry { w: "50ppt",  h: "100ppt", x: "50ppt",  y: "0" },
-            SnapGeometry { w: "33ppt",  h: "100ppt", x: "67ppt",  y: "0" },
-            SnapGeometry { w: "67ppt",  h: "100ppt", x: "33ppt",  y: "0" },
+            SnapGeometry {
+                w: "50ppt",
+                h: "100ppt",
+                x: "50ppt",
+                y: "0",
+            },
+            SnapGeometry {
+                w: "33ppt",
+                h: "100ppt",
+                x: "67ppt",
+                y: "0",
+            },
+            SnapGeometry {
+                w: "67ppt",
+                h: "100ppt",
+                x: "33ppt",
+                y: "0",
+            },
         ],
         "up" => vec![
-            SnapGeometry { w: "100ppt", h: "50ppt",  x: "0", y: "0" },
-            SnapGeometry { w: "100ppt", h: "33ppt",  x: "0", y: "0" },
-            SnapGeometry { w: "100ppt", h: "67ppt",  x: "0", y: "0" },
+            SnapGeometry {
+                w: "100ppt",
+                h: "50ppt",
+                x: "0",
+                y: "0",
+            },
+            SnapGeometry {
+                w: "100ppt",
+                h: "33ppt",
+                x: "0",
+                y: "0",
+            },
+            SnapGeometry {
+                w: "100ppt",
+                h: "67ppt",
+                x: "0",
+                y: "0",
+            },
         ],
         "down" => vec![
-            SnapGeometry { w: "100ppt", h: "50ppt",  x: "0", y: "50ppt" },
-            SnapGeometry { w: "100ppt", h: "33ppt",  x: "0", y: "67ppt" },
-            SnapGeometry { w: "100ppt", h: "67ppt",  x: "0", y: "33ppt" },
+            SnapGeometry {
+                w: "100ppt",
+                h: "50ppt",
+                x: "0",
+                y: "50ppt",
+            },
+            SnapGeometry {
+                w: "100ppt",
+                h: "33ppt",
+                x: "0",
+                y: "67ppt",
+            },
+            SnapGeometry {
+                w: "100ppt",
+                h: "67ppt",
+                x: "0",
+                y: "33ppt",
+            },
         ],
         "topleft" => vec![
-            SnapGeometry { w: "50ppt",  h: "50ppt",  x: "0", y: "0" },
-            SnapGeometry { w: "33ppt",  h: "50ppt",  x: "0", y: "0" },
-            SnapGeometry { w: "67ppt",  h: "50ppt",  x: "0", y: "0" },
+            SnapGeometry {
+                w: "50ppt",
+                h: "50ppt",
+                x: "0",
+                y: "0",
+            },
+            SnapGeometry {
+                w: "33ppt",
+                h: "50ppt",
+                x: "0",
+                y: "0",
+            },
+            SnapGeometry {
+                w: "67ppt",
+                h: "50ppt",
+                x: "0",
+                y: "0",
+            },
         ],
         "topright" => vec![
-            SnapGeometry { w: "50ppt",  h: "50ppt",  x: "50ppt",  y: "0" },
-            SnapGeometry { w: "33ppt",  h: "50ppt",  x: "67ppt",  y: "0" },
-            SnapGeometry { w: "67ppt",  h: "50ppt",  x: "33ppt",  y: "0" },
+            SnapGeometry {
+                w: "50ppt",
+                h: "50ppt",
+                x: "50ppt",
+                y: "0",
+            },
+            SnapGeometry {
+                w: "33ppt",
+                h: "50ppt",
+                x: "67ppt",
+                y: "0",
+            },
+            SnapGeometry {
+                w: "67ppt",
+                h: "50ppt",
+                x: "33ppt",
+                y: "0",
+            },
         ],
         "bottomleft" => vec![
-            SnapGeometry { w: "50ppt",  h: "50ppt",  x: "0", y: "50ppt" },
-            SnapGeometry { w: "33ppt",  h: "50ppt",  x: "0", y: "50ppt" },
-            SnapGeometry { w: "67ppt",  h: "50ppt",  x: "0", y: "50ppt" },
+            SnapGeometry {
+                w: "50ppt",
+                h: "50ppt",
+                x: "0",
+                y: "50ppt",
+            },
+            SnapGeometry {
+                w: "33ppt",
+                h: "50ppt",
+                x: "0",
+                y: "50ppt",
+            },
+            SnapGeometry {
+                w: "67ppt",
+                h: "50ppt",
+                x: "0",
+                y: "50ppt",
+            },
         ],
         "bottomright" => vec![
-            SnapGeometry { w: "50ppt",  h: "50ppt",  x: "50ppt",  y: "50ppt" },
-            SnapGeometry { w: "33ppt",  h: "50ppt",  x: "67ppt",  y: "50ppt" },
-            SnapGeometry { w: "67ppt",  h: "50ppt",  x: "33ppt",  y: "50ppt" },
+            SnapGeometry {
+                w: "50ppt",
+                h: "50ppt",
+                x: "50ppt",
+                y: "50ppt",
+            },
+            SnapGeometry {
+                w: "33ppt",
+                h: "50ppt",
+                x: "67ppt",
+                y: "50ppt",
+            },
+            SnapGeometry {
+                w: "67ppt",
+                h: "50ppt",
+                x: "33ppt",
+                y: "50ppt",
+            },
         ],
         "center" => vec![
-            SnapGeometry { w: "60ppt",  h: "80ppt",  x: "center", y: "center" },
-            SnapGeometry { w: "50ppt",  h: "70ppt",  x: "center", y: "center" },
-            SnapGeometry { w: "33ppt",  h: "60ppt",  x: "center", y: "center" },
+            SnapGeometry {
+                w: "60ppt",
+                h: "80ppt",
+                x: "center",
+                y: "center",
+            },
+            SnapGeometry {
+                w: "50ppt",
+                h: "70ppt",
+                x: "center",
+                y: "center",
+            },
+            SnapGeometry {
+                w: "33ppt",
+                h: "60ppt",
+                x: "center",
+                y: "center",
+            },
         ],
         _ => vec![],
     }

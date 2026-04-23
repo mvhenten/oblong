@@ -2,7 +2,9 @@ use iced::widget::{
     button, column, container, horizontal_rule, pick_list, row, scrollable, slider, text,
     text_input, Column,
 };
-use iced::{alignment, color, window, Border, Element, Font, Length, Task, Theme};
+use iced::{
+    alignment, color, keyboard, window, Border, Element, Font, Length, Subscription, Task, Theme,
+};
 
 use crate::appearance::*;
 use crate::config::*;
@@ -19,10 +21,11 @@ pub fn run() -> iced::Result {
     apply_defaults_live(&defaults);
     // Ensure the for_window rule is active for this session
     let _ = std::process::Command::new("swaymsg")
-        .arg("for_window [title=\"Oblong\"] floating enable, move position center")
+        .arg("for_window [app_id=\"Oblong\"] floating enable, move position center")
         .output();
 
     iced::application("Oblong", App::update, App::view)
+        .subscription(App::subscription)
         .theme(|_| Theme::Dark)
         .font(APP_FONT_BYTES)
         .default_font(APP_FONT)
@@ -31,6 +34,23 @@ pub fn run() -> iced::Result {
 }
 
 // ── Button styles ───────────────────────────────────────────
+//
+// HIG notes (macOS-style, for future reference):
+//
+//   Button bars go bottom-right, fixed below scrollable content.
+//   Order (left to right): Dismiss → Destructive → Secondary → **Primary**
+//
+//   - Primary (rightmost): the default/expected action — accent color,
+//     strongest visual weight. e.g. "Apply", "Save & Reload".
+//   - Secondary: less common but safe. e.g. "Save".
+//   - Destructive: visually distinct (red tint), separated from primary
+//     group or placed far left. e.g. "Fix Conflicts", "Reset".
+//   - Dismiss (leftmost): muted, low emphasis. e.g. "Close", "Cancel".
+//
+//   Refs:
+//     https://developer.apple.com/design/human-interface-guidelines/buttons
+//     https://developer.gnome.org/hig/patterns/controls/buttons.html
+//
 
 fn dark_button(_theme: &Theme, status: button::Status) -> button::Style {
     let base = button::Style {
@@ -51,6 +71,80 @@ fn dark_button(_theme: &Theme, status: button::Status) -> button::Style {
         },
         button::Status::Pressed => button::Style {
             background: Some(iced::Background::Color(color!(0x2a2a2a))),
+            ..base
+        },
+        _ => base,
+    }
+}
+
+/// Primary action — accent color, strongest visual weight (rightmost in bar).
+fn primary_button(_theme: &Theme, status: button::Status) -> button::Style {
+    let base = button::Style {
+        background: Some(iced::Background::Color(color!(0x446644))),
+        text_color: color!(0xeeeedd),
+        border: Border {
+            color: color!(0x558855),
+            width: 1.0,
+            radius: 4.0.into(),
+        },
+        shadow: Default::default(),
+    };
+    match status {
+        button::Status::Hovered => button::Style {
+            background: Some(iced::Background::Color(color!(0x558855))),
+            text_color: color!(0xffffff),
+            ..base
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(iced::Background::Color(color!(0x335533))),
+            ..base
+        },
+        _ => base,
+    }
+}
+
+/// Dismiss — muted, low emphasis (leftmost in bar).
+fn dismiss_button(_theme: &Theme, status: button::Status) -> button::Style {
+    let base = button::Style {
+        background: Some(iced::Background::Color(color!(0x2e2e2e))),
+        text_color: color!(0x999999),
+        border: Border {
+            color: color!(0x444444),
+            width: 1.0,
+            radius: 4.0.into(),
+        },
+        shadow: Default::default(),
+    };
+    match status {
+        button::Status::Hovered => button::Style {
+            background: Some(iced::Background::Color(color!(0x3a3a3a))),
+            text_color: color!(0xcccccc),
+            ..base
+        },
+        _ => base,
+    }
+}
+
+/// Destructive — red tint, separated from safe actions.
+fn destructive_button(_theme: &Theme, status: button::Status) -> button::Style {
+    let base = button::Style {
+        background: Some(iced::Background::Color(color!(0x4a2a2a))),
+        text_color: color!(0xddaaaa),
+        border: Border {
+            color: color!(0x664444),
+            width: 1.0,
+            radius: 4.0.into(),
+        },
+        shadow: Default::default(),
+    };
+    match status {
+        button::Status::Hovered => button::Style {
+            background: Some(iced::Background::Color(color!(0x5a3333))),
+            text_color: color!(0xffcccc),
+            ..base
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(iced::Background::Color(color!(0x3a2020))),
             ..base
         },
         _ => base,
@@ -170,7 +264,11 @@ fn color_input<'a>(
     is_active: bool,
 ) -> Element<'a, Message> {
     let swatch_color = parse_hex_color(value).unwrap_or(iced::Color::from_rgb8(0x33, 0x33, 0x33));
-    let highlight = if is_active { color!(0xeeeeee) } else { color!(0x666666) };
+    let highlight = if is_active {
+        color!(0xeeeeee)
+    } else {
+        color!(0x666666)
+    };
     let swatch = button(
         container(text(""))
             .width(Length::Fixed(16.0))
@@ -190,7 +288,10 @@ fn color_input<'a>(
     .style(|_theme: &Theme, _status| button::Style {
         background: None,
         text_color: color!(0xffffff),
-        border: Border { width: 0.0, ..Default::default() },
+        border: Border {
+            width: 0.0,
+            ..Default::default()
+        },
         shadow: Default::default(),
     });
     let input = text_input("#rrggbb", value)
@@ -221,26 +322,35 @@ fn color_editor<'a>(hex: &'a str) -> Element<'a, Message> {
             ..Default::default()
         });
 
-    let r_label = text("R").size(12).color(color!(0xcc6666)).width(Length::Fixed(16.0));
+    let r_label = text("R")
+        .size(12)
+        .color(color!(0xcc6666))
+        .width(Length::Fixed(16.0));
     let r_val = text(format!("{r}")).size(12).width(Length::Fixed(30.0));
-    let r_slider = slider(0..=255u8, r, move |v| Message::AppColorSlider(v, g, b))
-        .width(Length::Fill);
+    let r_slider =
+        slider(0..=255u8, r, move |v| Message::AppColorSlider(v, g, b)).width(Length::Fill);
     let r_row = row![r_label, r_slider, r_val]
         .spacing(8)
         .align_y(alignment::Vertical::Center);
 
-    let g_label = text("G").size(12).color(color!(0x66cc66)).width(Length::Fixed(16.0));
+    let g_label = text("G")
+        .size(12)
+        .color(color!(0x66cc66))
+        .width(Length::Fixed(16.0));
     let g_val = text(format!("{g}")).size(12).width(Length::Fixed(30.0));
-    let g_slider = slider(0..=255u8, g, move |v| Message::AppColorSlider(r, v, b))
-        .width(Length::Fill);
+    let g_slider =
+        slider(0..=255u8, g, move |v| Message::AppColorSlider(r, v, b)).width(Length::Fill);
     let g_row = row![g_label, g_slider, g_val]
         .spacing(8)
         .align_y(alignment::Vertical::Center);
 
-    let b_label = text("B").size(12).color(color!(0x6666cc)).width(Length::Fixed(16.0));
+    let b_label = text("B")
+        .size(12)
+        .color(color!(0x6666cc))
+        .width(Length::Fixed(16.0));
     let b_val = text(format!("{b}")).size(12).width(Length::Fixed(30.0));
-    let b_slider = slider(0..=255u8, b, move |v| Message::AppColorSlider(r, g, v))
-        .width(Length::Fill);
+    let b_slider =
+        slider(0..=255u8, b, move |v| Message::AppColorSlider(r, g, v)).width(Length::Fill);
     let b_row = row![b_label, b_slider, b_val]
         .spacing(8)
         .align_y(alignment::Vertical::Center);
@@ -270,25 +380,133 @@ fn color_editor<'a>(hex: &'a str) -> Element<'a, Message> {
 
 // ── Default snap bindings ───────────────────────────────────
 
+// ── Key-to-sway conversion ────────────────────────────────
+
+fn named_key_to_sway(named: &keyboard::key::Named) -> Option<&'static str> {
+    use keyboard::key::Named::*;
+    Some(match named {
+        ArrowLeft => "Left",
+        ArrowRight => "Right",
+        ArrowUp => "Up",
+        ArrowDown => "Down",
+        Enter => "Return",
+        Tab => "Tab",
+        Space => "space",
+        Backspace => "BackSpace",
+        Delete => "Delete",
+        Escape => "Escape",
+        Home => "Home",
+        End => "End",
+        PageUp => "Prior",
+        PageDown => "Next",
+        PrintScreen => "Print",
+        Insert => "Insert",
+        F1 => "F1",
+        F2 => "F2",
+        F3 => "F3",
+        F4 => "F4",
+        F5 => "F5",
+        F6 => "F6",
+        F7 => "F7",
+        F8 => "F8",
+        F9 => "F9",
+        F10 => "F10",
+        F11 => "F11",
+        F12 => "F12",
+        _ => return None,
+    })
+}
+
+fn key_to_sway(key: &keyboard::Key, modifiers: &keyboard::Modifiers) -> String {
+    let mut parts = Vec::new();
+
+    if modifiers.logo() {
+        parts.push("$mod".to_string());
+    }
+    if modifiers.control() {
+        parts.push("Ctrl".to_string());
+    }
+    if modifiers.alt() {
+        parts.push("Mod1".to_string());
+    }
+    if modifiers.shift() {
+        parts.push("Shift".to_string());
+    }
+
+    match key {
+        keyboard::Key::Named(named) => {
+            if let Some(name) = named_key_to_sway(named) {
+                parts.push(name.to_string());
+            }
+        }
+        keyboard::Key::Character(c) => {
+            // sway wants lowercase for letter keys
+            parts.push(c.to_lowercase().to_string());
+        }
+        keyboard::Key::Unidentified => {}
+    }
+
+    parts.join("+")
+}
+
 fn default_snap_bindings() -> Vec<Binding> {
     let bin = std::env::current_exe()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "oblong".into());
 
     vec![
-        Binding { keys: "$mod+Left".into(),       command: format!("exec {bin} snap left") },
-        Binding { keys: "$mod+Right".into(),      command: format!("exec {bin} snap right") },
-        Binding { keys: "$mod+Up".into(),         command: format!("exec {bin} snap up") },
-        Binding { keys: "$mod+Down".into(),       command: format!("exec {bin} snap down") },
-        Binding { keys: "$mod+m".into(),          command: format!("exec {bin} snap maximize") },
-        Binding { keys: "$mod+c".into(),          command: format!("exec {bin} snap center") },
-        Binding { keys: "$mod+BackSpace".into(),  command: format!("exec {bin} snap restore") },
-        Binding { keys: "$mod+u".into(),          command: format!("exec {bin} snap topleft") },
-        Binding { keys: "$mod+i".into(),          command: format!("exec {bin} snap topright") },
-        Binding { keys: "$mod+Shift+u".into(),    command: format!("exec {bin} snap bottomleft") },
-        Binding { keys: "$mod+Shift+i".into(),    command: format!("exec {bin} snap bottomright") },
-        Binding { keys: "$mod+Tab".into(),         command: format!("exec {bin} switch next") },
-        Binding { keys: "$mod+Shift+Tab".into(),   command: format!("exec {bin} switch prev") },
+        Binding {
+            keys: "$mod+Left".into(),
+            command: format!("exec {bin} snap left"),
+        },
+        Binding {
+            keys: "$mod+Right".into(),
+            command: format!("exec {bin} snap right"),
+        },
+        Binding {
+            keys: "$mod+Up".into(),
+            command: format!("exec {bin} snap up"),
+        },
+        Binding {
+            keys: "$mod+Down".into(),
+            command: format!("exec {bin} snap down"),
+        },
+        Binding {
+            keys: "$mod+m".into(),
+            command: format!("exec {bin} snap maximize"),
+        },
+        Binding {
+            keys: "$mod+c".into(),
+            command: format!("exec {bin} snap center"),
+        },
+        Binding {
+            keys: "$mod+BackSpace".into(),
+            command: format!("exec {bin} snap restore"),
+        },
+        Binding {
+            keys: "$mod+u".into(),
+            command: format!("exec {bin} snap topleft"),
+        },
+        Binding {
+            keys: "$mod+i".into(),
+            command: format!("exec {bin} snap topright"),
+        },
+        Binding {
+            keys: "$mod+Shift+u".into(),
+            command: format!("exec {bin} snap bottomleft"),
+        },
+        Binding {
+            keys: "$mod+Shift+i".into(),
+            command: format!("exec {bin} snap bottomright"),
+        },
+        Binding {
+            keys: "$mod+Tab".into(),
+            command: format!("exec {bin} switch next"),
+        },
+        Binding {
+            keys: "$mod+Shift+Tab".into(),
+            command: format!("exec {bin} switch prev"),
+        },
     ]
 }
 
@@ -308,6 +526,7 @@ struct App {
     tab: Tab,
     // Shortcuts
     groups: Vec<BindingGroup>,
+    recording: Option<(usize, usize)>,
     // Displays
     sway_outputs: Vec<SwayOutput>,
     output_configs: Vec<OutputConfig>,
@@ -323,9 +542,7 @@ struct App {
 
 impl Default for App {
     fn default() -> Self {
-        let groups = load_config().unwrap_or_else(|| {
-            group_bindings(default_snap_bindings())
-        });
+        let groups = load_config().unwrap_or_else(|| group_bindings(default_snap_bindings()));
 
         let (sway_outputs, output_configs) = match query_outputs() {
             Ok(outputs) => {
@@ -359,6 +576,7 @@ impl Default for App {
         Self {
             tab: Tab::Shortcuts,
             groups,
+            recording: None,
             sway_outputs,
             output_configs,
             appearance,
@@ -375,6 +593,8 @@ enum Message {
     SwitchTab(Tab),
     // Shortcuts
     KeysChanged(usize, usize, String),
+    RecordKey(usize, usize),
+    KeyCaptured(keyboard::Key, keyboard::Modifiers),
     SaveShortcuts,
     SaveAndReloadShortcuts,
     FixConflicts,
@@ -410,6 +630,7 @@ enum Message {
     DefaultsAutoBackAndForth(bool),
     DefaultsMouseWarping(String),
     DefaultsFloatByDefault(bool),
+    DefaultsSuperCopyPaste(bool),
     SaveDefaults,
     SaveAndReloadDefaults,
     // Shared
@@ -478,22 +699,33 @@ impl App {
                 }
                 self.status.clear();
             }
-            Message::SaveShortcuts => {
-                match self.save_shortcuts() {
-                    Ok(()) => self.status = "✓ Saved.".into(),
-                    Err(e) if e.starts_with("Saved") => self.status = format!("⚠ {e}"),
-                    Err(e) => self.status = format!("✗ Error: {e}"),
-                }
+            Message::RecordKey(gi, bi) => {
+                self.recording = Some((gi, bi));
+                self.status = "⌨ Press a key combo...".into();
             }
-            Message::SaveAndReloadShortcuts => {
-                match self.save_shortcuts() {
-                    Ok(()) => self.sway_reload("Saved"),
-                    Err(e) if e.starts_with("Saved") => {
-                        self.sway_reload(&e);
+            Message::KeyCaptured(key, modifiers) => {
+                if let Some((gi, bi)) = self.recording.take() {
+                    let sway_str = key_to_sway(&key, &modifiers);
+                    if let Some(g) = self.groups.get_mut(gi) {
+                        if let Some(b) = g.bindings.get_mut(bi) {
+                            b.keys = sway_str;
+                        }
                     }
-                    Err(e) => self.status = format!("✗ Error: {e}"),
+                    self.status = "✓ Key captured.".into();
                 }
             }
+            Message::SaveShortcuts => match self.save_shortcuts() {
+                Ok(()) => self.status = "✓ Saved.".into(),
+                Err(e) if e.starts_with("Saved") => self.status = format!("⚠ {e}"),
+                Err(e) => self.status = format!("✗ Error: {e}"),
+            },
+            Message::SaveAndReloadShortcuts => match self.save_shortcuts() {
+                Ok(()) => self.sway_reload("Saved"),
+                Err(e) if e.starts_with("Saved") => {
+                    self.sway_reload(&e);
+                }
+                Err(e) => self.status = format!("✗ Error: {e}"),
+            },
             Message::FixConflicts => {
                 let all = self.all_bindings();
                 let conflicts = detect_conflicts(&all);
@@ -501,7 +733,9 @@ impl App {
                     self.status = "No conflicts found.".into();
                 } else {
                     match comment_out_conflicts(&conflicts) {
-                        Ok(n) => self.status = format!("✓ Commented out {n} conflicting binding(s)."),
+                        Ok(n) => {
+                            self.status = format!("✓ Commented out {n} conflicting binding(s).")
+                        }
                         Err(e) => self.status = format!("✗ Error: {e}"),
                     }
                 }
@@ -511,7 +745,11 @@ impl App {
             Message::OutputResolution(idx, res) => {
                 if let Some(conf) = self.output_configs.get_mut(idx) {
                     // Pick highest refresh rate for this resolution
-                    if let Some(sway_out) = self.sway_outputs.iter().find(|o| o.stable_id() == conf.name || o.name == conf.name) {
+                    if let Some(sway_out) = self
+                        .sway_outputs
+                        .iter()
+                        .find(|o| o.stable_id() == conf.name || o.name == conf.name)
+                    {
                         let rates = refresh_rates_for_resolution(sway_out, &res);
                         conf.refresh = rates.first().copied();
                     }
@@ -575,31 +813,25 @@ impl App {
                 }
                 self.status.clear();
             }
-            Message::SaveDisplays => {
-                match self.save_displays() {
-                    Ok(()) => self.status = "✓ Display config saved.".into(),
-                    Err(e) => self.status = format!("✗ Error: {e}"),
+            Message::SaveDisplays => match self.save_displays() {
+                Ok(()) => self.status = "✓ Display config saved.".into(),
+                Err(e) => self.status = format!("✗ Error: {e}"),
+            },
+            Message::SaveAndReloadDisplays => match self.save_displays() {
+                Ok(()) => self.sway_reload("Display config saved"),
+                Err(e) => self.status = format!("✗ Error: {e}"),
+            },
+            Message::RefreshOutputs => match query_outputs() {
+                Ok(outputs) => {
+                    let mut cfgs: Vec<OutputConfig> =
+                        outputs.iter().map(config_from_sway).collect();
+                    infer_relative_positions(&mut cfgs, &outputs);
+                    self.sway_outputs = outputs;
+                    self.output_configs = cfgs;
+                    self.status = "Refreshed from sway.".into();
                 }
-            }
-            Message::SaveAndReloadDisplays => {
-                match self.save_displays() {
-                    Ok(()) => self.sway_reload("Display config saved"),
-                    Err(e) => self.status = format!("✗ Error: {e}"),
-                }
-            }
-            Message::RefreshOutputs => {
-                match query_outputs() {
-                    Ok(outputs) => {
-                        let mut cfgs: Vec<OutputConfig> =
-                            outputs.iter().map(config_from_sway).collect();
-                        infer_relative_positions(&mut cfgs, &outputs);
-                        self.sway_outputs = outputs;
-                        self.output_configs = cfgs;
-                        self.status = "Refreshed from sway.".into();
-                    }
-                    Err(e) => self.status = format!("Error: {e}"),
-                }
-            }
+                Err(e) => self.status = format!("Error: {e}"),
+            },
 
             // ── Appearance ──────────────────────────────
             Message::AppFontFamily(family) => {
@@ -613,7 +845,8 @@ impl App {
                 self.status.clear();
             }
             Message::AppFontSizeStep(delta) => {
-                self.appearance.font_size = (self.appearance.font_size as i32 + delta).max(1) as u32;
+                self.appearance.font_size =
+                    (self.appearance.font_size as i32 + delta).max(1) as u32;
                 self.status.clear();
             }
             Message::AppGapsInner(val) => {
@@ -623,7 +856,8 @@ impl App {
                 self.status.clear();
             }
             Message::AppGapsInnerStep(delta) => {
-                self.appearance.gaps_inner = (self.appearance.gaps_inner as i32 + delta).max(0) as u32;
+                self.appearance.gaps_inner =
+                    (self.appearance.gaps_inner as i32 + delta).max(0) as u32;
                 self.status.clear();
             }
             Message::AppGapsOuter(val) => {
@@ -633,7 +867,8 @@ impl App {
                 self.status.clear();
             }
             Message::AppGapsOuterStep(delta) => {
-                self.appearance.gaps_outer = (self.appearance.gaps_outer as i32 + delta).max(0) as u32;
+                self.appearance.gaps_outer =
+                    (self.appearance.gaps_outer as i32 + delta).max(0) as u32;
                 self.status.clear();
             }
             Message::AppBorderWidth(val) => {
@@ -643,7 +878,8 @@ impl App {
                 self.status.clear();
             }
             Message::AppBorderWidthStep(delta) => {
-                self.appearance.border_width = (self.appearance.border_width as i32 + delta).max(0) as u32;
+                self.appearance.border_width =
+                    (self.appearance.border_width as i32 + delta).max(0) as u32;
                 self.status.clear();
             }
             Message::AppBorderStyle(val) => {
@@ -681,7 +917,9 @@ impl App {
                 if let Some((target, field)) = self.editing_color {
                     let cs = match target {
                         ColorTarget::Focused => &mut self.appearance.colors.focused,
-                        ColorTarget::FocusedInactive => &mut self.appearance.colors.focused_inactive,
+                        ColorTarget::FocusedInactive => {
+                            &mut self.appearance.colors.focused_inactive
+                        }
                         ColorTarget::Unfocused => &mut self.appearance.colors.unfocused,
                         ColorTarget::Urgent => &mut self.appearance.colors.urgent,
                     };
@@ -695,25 +933,21 @@ impl App {
                 }
                 self.status.clear();
             }
-            Message::SaveAppearance => {
-                match write_appearance_conf(&self.appearance) {
-                    Ok(()) => {
-                        save_appearance(&self.appearance);
-                        self.status = "Saved.".into();
-                    }
-                    Err(e) => self.status = format!("Error: {e}"),
+            Message::SaveAppearance => match write_appearance_conf(&self.appearance) {
+                Ok(()) => {
+                    save_appearance(&self.appearance);
+                    self.status = "Saved.".into();
                 }
-            }
-            Message::SaveAndReloadAppearance => {
-                match write_appearance_conf(&self.appearance) {
-                    Ok(()) => {
-                        save_appearance(&self.appearance);
-                        apply_appearance_live(&self.appearance);
-                        self.sway_reload("Appearance saved");
-                    }
-                    Err(e) => self.status = format!("Error: {e}"),
+                Err(e) => self.status = format!("Error: {e}"),
+            },
+            Message::SaveAndReloadAppearance => match write_appearance_conf(&self.appearance) {
+                Ok(()) => {
+                    save_appearance(&self.appearance);
+                    apply_appearance_live(&self.appearance);
+                    self.sway_reload("Appearance saved");
                 }
-            }
+                Err(e) => self.status = format!("Error: {e}"),
+            },
 
             // ── Behavior ────────────────────────────────
             Message::DefaultsFocusActivation(val) => {
@@ -740,25 +974,25 @@ impl App {
                 self.defaults.float_by_default = val;
                 self.status.clear();
             }
-            Message::SaveDefaults => {
-                match write_defaults_conf(&self.defaults) {
-                    Ok(()) => {
-                        save_defaults(&self.defaults);
-                        self.status = "✓ Saved.".into();
-                    }
-                    Err(e) => self.status = format!("✗ Error: {e}"),
-                }
+            Message::DefaultsSuperCopyPaste(val) => {
+                self.defaults.super_copy_paste = val;
+                self.status.clear();
             }
-            Message::SaveAndReloadDefaults => {
-                match write_defaults_conf(&self.defaults) {
-                    Ok(()) => {
-                        save_defaults(&self.defaults);
-                        apply_defaults_live(&self.defaults);
-                        self.sway_reload("Behavior saved");
-                    }
-                    Err(e) => self.status = format!("✗ Error: {e}"),
+            Message::SaveDefaults => match write_defaults_conf(&self.defaults) {
+                Ok(()) => {
+                    save_defaults(&self.defaults);
+                    self.status = "✓ Saved.".into();
                 }
-            }
+                Err(e) => self.status = format!("✗ Error: {e}"),
+            },
+            Message::SaveAndReloadDefaults => match write_defaults_conf(&self.defaults) {
+                Ok(()) => {
+                    save_defaults(&self.defaults);
+                    apply_defaults_live(&self.defaults);
+                    self.sway_reload("Behavior saved");
+                }
+                Err(e) => self.status = format!("✗ Error: {e}"),
+            },
 
             Message::Quit => {
                 return window::get_oldest().then(|id| window::close(id.expect("no window")));
@@ -771,6 +1005,25 @@ impl App {
         match std::process::Command::new("swaymsg").arg("reload").output() {
             Ok(_) => self.status = format!("✓ {prefix} & sway reloaded."),
             Err(e) => self.status = format!("✓ {prefix}, but reload failed: {e}"),
+        }
+    }
+
+    fn subscription(&self) -> Subscription<Message> {
+        if self.recording.is_some() {
+            keyboard::on_key_press(|key, modifiers| {
+                // Ignore bare modifier keys
+                match &key {
+                    keyboard::Key::Named(
+                        keyboard::key::Named::Shift
+                        | keyboard::key::Named::Control
+                        | keyboard::key::Named::Alt
+                        | keyboard::key::Named::Super,
+                    ) => None,
+                    _ => Some(Message::KeyCaptured(key, modifiers)),
+                }
+            })
+        } else {
+            Subscription::none()
         }
     }
 
@@ -817,15 +1070,10 @@ impl App {
 
         let status = text(&self.status).size(13).color(color!(0x5a8a5a));
 
-        let main_content = column![
-            header,
-            tabs,
-            content,
-            status,
-        ]
-        .spacing(8)
-        .padding(24)
-        .max_width(700);
+        let main_content = column![header, tabs, content, status,]
+            .spacing(8)
+            .padding(24)
+            .max_width(700);
 
         container(main_content)
             .width(Length::Fill)
@@ -837,22 +1085,38 @@ impl App {
     fn view_tabs(&self) -> Element<'_, Message> {
         let shortcut_tab = button(text("Shortcuts").size(14))
             .on_press(Message::SwitchTab(Tab::Shortcuts))
-            .style(if self.tab == Tab::Shortcuts { tab_active } else { tab_inactive })
+            .style(if self.tab == Tab::Shortcuts {
+                tab_active
+            } else {
+                tab_inactive
+            })
             .padding([8, 20]);
 
         let display_tab = button(text("Displays").size(14))
             .on_press(Message::SwitchTab(Tab::Displays))
-            .style(if self.tab == Tab::Displays { tab_active } else { tab_inactive })
+            .style(if self.tab == Tab::Displays {
+                tab_active
+            } else {
+                tab_inactive
+            })
             .padding([8, 20]);
 
         let appearance_tab = button(text("Appearance").size(14))
             .on_press(Message::SwitchTab(Tab::Appearance))
-            .style(if self.tab == Tab::Appearance { tab_active } else { tab_inactive })
+            .style(if self.tab == Tab::Appearance {
+                tab_active
+            } else {
+                tab_inactive
+            })
             .padding([8, 20]);
 
         let behavior_tab = button(text("Behavior").size(14))
             .on_press(Message::SwitchTab(Tab::Behavior))
-            .style(if self.tab == Tab::Behavior { tab_active } else { tab_inactive })
+            .style(if self.tab == Tab::Behavior {
+                tab_active
+            } else {
+                tab_inactive
+            })
             .padding([8, 20]);
 
         row![shortcut_tab, display_tab, appearance_tab, behavior_tab]
@@ -860,32 +1124,81 @@ impl App {
             .into()
     }
 
+    fn duplicate_keys(&self) -> std::collections::HashSet<String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut dupes = std::collections::HashSet::new();
+        for group in &self.groups {
+            for binding in &group.bindings {
+                let k = binding.keys.trim().to_lowercase();
+                if !k.is_empty() && !seen.insert(k.clone()) {
+                    dupes.insert(k);
+                }
+            }
+        }
+        dupes
+    }
+
     fn view_shortcuts(&self) -> Element<'_, Message> {
         let mut content_col = Column::new().spacing(12);
+        let dupes = self.duplicate_keys();
 
         for (gi, group) in self.groups.iter().enumerate() {
             let group_title = text(&group.name).size(16).color(color!(0x88bb88));
 
-            let bindings = group
-                .bindings
-                .iter()
-                .enumerate()
-                .fold(Column::new().spacing(4), |col, (bi, binding)| {
+            let bindings = group.bindings.iter().enumerate().fold(
+                Column::new().spacing(4),
+                |col, (bi, binding)| {
                     let label = text(label_for_command(&binding.command))
                         .size(13)
                         .width(Length::Fixed(200.0));
 
+                    let is_duplicate = !binding.keys.trim().is_empty()
+                        && dupes.contains(&binding.keys.trim().to_lowercase());
+
                     let input = text_input("e.g. $mod+Shift+Left", &binding.keys)
                         .on_input(move |val| Message::KeysChanged(gi, bi, val))
                         .size(13)
-                        .width(Length::Fill);
+                        .width(Length::Fill)
+                        .style(move |theme: &Theme, status| {
+                            let mut s = iced::widget::text_input::default(theme, status);
+                            if is_duplicate {
+                                s.border.color = color!(0xcc4444);
+                                s.border.width = 2.0;
+                            }
+                            s
+                        });
 
-                    col.push(
-                        row![label, input]
-                            .spacing(12)
-                            .align_y(alignment::Vertical::Center),
-                    )
-                });
+                    let is_recording = self.recording == Some((gi, bi));
+                    let rec_label = if is_recording { "●" } else { "⌨" };
+                    let rec_btn = button(text(rec_label).size(14))
+                        .on_press(Message::RecordKey(gi, bi))
+                        .style(if is_recording {
+                            |theme: &Theme, status| {
+                                let mut s = dark_button(theme, status);
+                                s.background = Some(iced::Background::Color(color!(0x884444)));
+                                s
+                            }
+                        } else {
+                            dark_button
+                        })
+                        .padding([4, 8]);
+
+                    let binding_row = row![label, input, rec_btn]
+                        .spacing(12)
+                        .align_y(alignment::Vertical::Center);
+
+                    let col = col.push(binding_row);
+                    if is_duplicate {
+                        col.push(
+                            text("⚠ Duplicate key binding")
+                                .size(11)
+                                .color(color!(0xcc4444)),
+                        )
+                    } else {
+                        col
+                    }
+                },
+            );
 
             content_col = content_col
                 .push(group_title)
@@ -894,30 +1207,32 @@ impl App {
         }
 
         let buttons = row![
+            button(text("Close").size(14))
+                .on_press(Message::Quit)
+                .style(dismiss_button)
+                .padding([8, 16]),
+            button(text("Fix Conflicts").size(14))
+                .on_press(Message::FixConflicts)
+                .style(destructive_button)
+                .padding([8, 16]),
+            iced::widget::horizontal_space(),
             button(text("Save").size(14))
                 .on_press(Message::SaveShortcuts)
                 .style(dark_button)
                 .padding([8, 16]),
-            button(text("Save & Reload").size(14))
+            button(text("Apply").size(14))
                 .on_press(Message::SaveAndReloadShortcuts)
-                .style(dark_button)
-                .padding([8, 16]),
-            button(text("Fix Conflicts").size(14))
-                .on_press(Message::FixConflicts)
-                .style(dark_button)
-                .padding([8, 16]),
-            button(text("Close").size(14))
-                .on_press(Message::Quit)
-                .style(dark_button)
+                .style(primary_button)
                 .padding([8, 16]),
         ]
-        .spacing(8);
+        .spacing(8)
+        .align_y(alignment::Vertical::Center);
 
         column![
-            scrollable(
-                container(content_col)
-                    .padding(iced::Padding { right: 32.0, ..iced::Padding::ZERO })
-            )
+            scrollable(container(content_col).padding(iced::Padding {
+                right: 32.0,
+                ..iced::Padding::ZERO
+            }))
             .height(Length::Fill),
             buttons,
         ]
@@ -929,7 +1244,9 @@ impl App {
     fn view_displays(&self) -> Element<'_, Message> {
         if self.sway_outputs.is_empty() {
             return column![
-                text("No displays detected. Is sway running?").size(14).color(color!(0xcc8888)),
+                text("No displays detected. Is sway running?")
+                    .size(14)
+                    .color(color!(0xcc8888)),
                 button(text("Retry").size(14))
                     .on_press(Message::RefreshOutputs)
                     .style(dark_button)
@@ -943,7 +1260,10 @@ impl App {
         let mut content_col = Column::new().spacing(16);
 
         for (i, conf) in self.output_configs.iter().enumerate() {
-            let sway_out = self.sway_outputs.iter().find(|o| o.stable_id() == conf.name || o.name == conf.name);
+            let sway_out = self
+                .sway_outputs
+                .iter()
+                .find(|o| o.stable_id() == conf.name || o.name == conf.name);
             let description = sway_out
                 .map(|o| o.description())
                 .unwrap_or_else(|| conf.name.clone());
@@ -951,16 +1271,12 @@ impl App {
             let output_title = text(description).size(16).color(color!(0x88bb88));
 
             // Resolution picker
-            let modes: Vec<String> = sway_out
-                .map(|o| unique_modes(o))
-                .unwrap_or_default();
+            let modes: Vec<String> = sway_out.map(unique_modes).unwrap_or_default();
             let current_res = conf.resolution.clone();
             let res_label = text("Resolution").size(13).width(Length::Fixed(100.0));
-            let res_picker = pick_list(
-                modes,
-                current_res,
-                move |val| Message::OutputResolution(i, val),
-            )
+            let res_picker = pick_list(modes, current_res, move |val| {
+                Message::OutputResolution(i, val)
+            })
             .text_size(13)
             .width(Length::Fill);
             let res_row = row![res_label, res_picker]
@@ -992,7 +1308,8 @@ impl App {
             if self.output_configs.len() > 1 {
                 let others = self.other_output_names(&conf.name);
                 if !others.is_empty() {
-                    let relations: Vec<String> = POSITION_RELATIONS.iter().map(|s| s.to_string()).collect();
+                    let relations: Vec<String> =
+                        POSITION_RELATIONS.iter().map(|s| s.to_string()).collect();
                     let current_relation = conf.position.as_ref().map(|p| {
                         match p {
                             OutputPosition::LeftOf(_) => "Left of",
@@ -1000,7 +1317,8 @@ impl App {
                             OutputPosition::Above(_) => "Above",
                             OutputPosition::Below(_) => "Below",
                             OutputPosition::Absolute { .. } => "Right of",
-                        }.to_string()
+                        }
+                        .to_string()
                     });
                     let current_target = conf
                         .position
@@ -1010,19 +1328,15 @@ impl App {
 
                     let pos_label = text("Position").size(13).width(Length::Fixed(100.0));
                     let idx = i;
-                    let rel_picker = pick_list(
-                        relations,
-                        current_relation,
-                        move |val| Message::OutputPosition(idx, val),
-                    )
+                    let rel_picker = pick_list(relations, current_relation, move |val| {
+                        Message::OutputPosition(idx, val)
+                    })
                     .text_size(13)
                     .width(Length::Fixed(100.0));
 
-                    let target_picker = pick_list(
-                        others,
-                        current_target,
-                        move |val| Message::OutputPositionTarget(i, val),
-                    )
+                    let target_picker = pick_list(others, current_target, move |val| {
+                        Message::OutputPositionTarget(i, val)
+                    })
                     .text_size(13)
                     .width(Length::Fill);
 
@@ -1034,36 +1348,36 @@ impl App {
                 }
             }
 
-            content_col = content_col
-                .push(output_section)
-                .push(horizontal_rule(1));
+            content_col = content_col.push(output_section).push(horizontal_rule(1));
         }
 
         let buttons = row![
-            button(text("Save").size(14))
-                .on_press(Message::SaveDisplays)
-                .style(dark_button)
-                .padding([8, 16]),
-            button(text("Save & Reload").size(14))
-                .on_press(Message::SaveAndReloadDisplays)
-                .style(dark_button)
+            button(text("Close").size(14))
+                .on_press(Message::Quit)
+                .style(dismiss_button)
                 .padding([8, 16]),
             button(text("Refresh").size(14))
                 .on_press(Message::RefreshOutputs)
                 .style(dark_button)
                 .padding([8, 16]),
-            button(text("Close").size(14))
-                .on_press(Message::Quit)
+            iced::widget::horizontal_space(),
+            button(text("Save").size(14))
+                .on_press(Message::SaveDisplays)
                 .style(dark_button)
                 .padding([8, 16]),
+            button(text("Apply").size(14))
+                .on_press(Message::SaveAndReloadDisplays)
+                .style(primary_button)
+                .padding([8, 16]),
         ]
-        .spacing(8);
+        .spacing(8)
+        .align_y(alignment::Vertical::Center);
 
         column![
-            scrollable(
-                container(content_col)
-                    .padding(iced::Padding { right: 32.0, ..iced::Padding::ZERO })
-            )
+            scrollable(container(content_col).padding(iced::Padding {
+                right: 32.0,
+                ..iced::Padding::ZERO
+            }))
             .height(Length::Fill),
             buttons,
         ]
@@ -1181,20 +1495,39 @@ impl App {
         content_col = content_col.push(colors_title);
 
         let color_targets = [
-            ("Focused",          ColorTarget::Focused,         &conf.colors.focused),
-            ("Focused Inactive", ColorTarget::FocusedInactive, &conf.colors.focused_inactive),
-            ("Unfocused",        ColorTarget::Unfocused,       &conf.colors.unfocused),
-            ("Urgent",           ColorTarget::Urgent,          &conf.colors.urgent),
+            ("Focused", ColorTarget::Focused, &conf.colors.focused),
+            (
+                "Focused Inactive",
+                ColorTarget::FocusedInactive,
+                &conf.colors.focused_inactive,
+            ),
+            ("Unfocused", ColorTarget::Unfocused, &conf.colors.unfocused),
+            ("Urgent", ColorTarget::Urgent, &conf.colors.urgent),
         ];
 
         // Column headers
         let header = row![
             text("").size(11).width(Length::Fixed(120.0)),
-            text("border").size(11).color(color!(0x888888)).width(Length::Fill),
-            text("bg").size(11).color(color!(0x888888)).width(Length::Fill),
-            text("text").size(11).color(color!(0x888888)).width(Length::Fill),
-            text("indicator").size(11).color(color!(0x888888)).width(Length::Fill),
-            text("child").size(11).color(color!(0x888888)).width(Length::Fill),
+            text("border")
+                .size(11)
+                .color(color!(0x888888))
+                .width(Length::Fill),
+            text("bg")
+                .size(11)
+                .color(color!(0x888888))
+                .width(Length::Fill),
+            text("text")
+                .size(11)
+                .color(color!(0x888888))
+                .width(Length::Fill),
+            text("indicator")
+                .size(11)
+                .color(color!(0x888888))
+                .width(Length::Fill),
+            text("child")
+                .size(11)
+                .color(color!(0x888888))
+                .width(Length::Fill),
         ]
         .spacing(4);
         content_col = content_col.push(header);
@@ -1238,7 +1571,7 @@ impl App {
                         ..Default::default()
                     }),
                 ]
-                .align_y(alignment::Vertical::Center)
+                .align_y(alignment::Vertical::Center),
             )
             .width(Length::Fill)
             .style(move |_: &Theme| container::Style {
@@ -1273,26 +1606,27 @@ impl App {
         }
 
         let buttons = row![
+            button(text("Close").size(14))
+                .on_press(Message::Quit)
+                .style(dismiss_button)
+                .padding([8, 16]),
+            iced::widget::horizontal_space(),
             button(text("Save").size(14))
                 .on_press(Message::SaveAppearance)
                 .style(dark_button)
                 .padding([8, 16]),
-            button(text("Save & Reload").size(14))
+            button(text("Apply").size(14))
                 .on_press(Message::SaveAndReloadAppearance)
-                .style(dark_button)
-                .padding([8, 16]),
-            button(text("Close").size(14))
-                .on_press(Message::Quit)
-                .style(dark_button)
+                .style(primary_button)
                 .padding([8, 16]),
         ]
         .spacing(8);
 
         column![
-            scrollable(
-                container(content_col)
-                    .padding(iced::Padding { right: 32.0, ..iced::Padding::ZERO })
-            )
+            scrollable(container(content_col).padding(iced::Padding {
+                right: 32.0,
+                ..iced::Padding::ZERO
+            }))
             .height(Length::Fill),
             buttons,
         ]
@@ -1309,14 +1643,21 @@ impl App {
         let focus_title = text("Window Focus").size(16).color(color!(0x88bb88));
 
         let activation_label = text("New windows").size(13).width(Length::Fixed(160.0));
-        let activation_options: Vec<String> = vec!["focus".into(), "smart".into(), "urgent".into(), "none".into()];
+        let activation_options: Vec<String> = vec![
+            "focus".into(),
+            "smart".into(),
+            "urgent".into(),
+            "none".into(),
+        ];
         let activation_hint = text(match conf.focus_on_window_activation.as_str() {
             "focus" => "always steal focus",
             "smart" => "focus if on active workspace",
             "urgent" => "mark urgent, don't focus",
             "none" => "do nothing",
             _ => "",
-        }).size(11).color(color!(0x888888));
+        })
+        .size(11)
+        .color(color!(0x888888));
         let activation_picker = pick_list(
             activation_options,
             Some(conf.focus_on_window_activation.clone()),
@@ -1328,14 +1669,18 @@ impl App {
             .spacing(12)
             .align_y(alignment::Vertical::Center);
 
-        let follows_label = text("Focus follows mouse").size(13).width(Length::Fixed(160.0));
+        let follows_label = text("Focus follows mouse")
+            .size(13)
+            .width(Length::Fixed(160.0));
         let follows_options: Vec<String> = vec!["yes".into(), "no".into(), "always".into()];
         let follows_hint = text(match conf.focus_follows_mouse.as_str() {
             "yes" => "focus window under cursor",
             "no" => "click to focus only",
             "always" => "aggressive — even across outputs",
             _ => "",
-        }).size(11).color(color!(0x888888));
+        })
+        .size(11)
+        .color(color!(0x888888));
         let follows_picker = pick_list(
             follows_options,
             Some(conf.focus_follows_mouse.clone()),
@@ -1354,7 +1699,9 @@ impl App {
             "container" => "warp to focused container",
             "none" => "never move the cursor",
             _ => "",
-        }).size(11).color(color!(0x888888));
+        })
+        .size(11)
+        .color(color!(0x888888));
         let warping_picker = pick_list(
             warping_options,
             Some(conf.mouse_warping.clone()),
@@ -1376,16 +1723,24 @@ impl App {
         // ── Workspaces ──
         let ws_title = text("Workspaces").size(16).color(color!(0x88bb88));
 
-        let baf_label = text("Auto back-and-forth").size(13).width(Length::Fixed(160.0));
+        let baf_label = text("Auto back-and-forth")
+            .size(13)
+            .width(Length::Fixed(160.0));
         let baf_options: Vec<String> = vec!["yes".into(), "no".into()];
         let baf_hint = text(if conf.workspace_auto_back_and_forth {
             "repeat shortcut to return"
         } else {
             "stay on workspace"
-        }).size(11).color(color!(0x888888));
+        })
+        .size(11)
+        .color(color!(0x888888));
         let baf_picker = pick_list(
             baf_options,
-            Some(if conf.workspace_auto_back_and_forth { "yes".to_string() } else { "no".to_string() }),
+            Some(if conf.workspace_auto_back_and_forth {
+                "yes".to_string()
+            } else {
+                "no".to_string()
+            }),
             |val: String| Message::DefaultsAutoBackAndForth(val == "yes"),
         )
         .text_size(13)
@@ -1402,14 +1757,19 @@ impl App {
         // ── Popups ──
         let popup_title = text("Popups & Fullscreen").size(16).color(color!(0x88bb88));
 
-        let popup_label = text("Popup during fullscreen").size(13).width(Length::Fixed(160.0));
-        let popup_options: Vec<String> = vec!["smart".into(), "ignore".into(), "leave_fullscreen".into()];
+        let popup_label = text("Popup during fullscreen")
+            .size(13)
+            .width(Length::Fixed(160.0));
+        let popup_options: Vec<String> =
+            vec!["smart".into(), "ignore".into(), "leave_fullscreen".into()];
         let popup_hint = text(match conf.popup_during_fullscreen.as_str() {
             "smart" => "show if from focused app",
             "ignore" => "never show",
             "leave_fullscreen" => "exit fullscreen to show",
             _ => "",
-        }).size(11).color(color!(0x888888));
+        })
+        .size(11)
+        .color(color!(0x888888));
         let popup_picker = pick_list(
             popup_options,
             Some(conf.popup_during_fullscreen.clone()),
@@ -1429,16 +1789,24 @@ impl App {
         // ── Floating Windows ──
         let float_title = text("Floating Windows").size(16).color(color!(0x88bb88));
 
-        let float_label = text("Float by default").size(13).width(Length::Fixed(160.0));
+        let float_label = text("Float by default")
+            .size(13)
+            .width(Length::Fixed(160.0));
         let float_options: Vec<String> = vec!["yes".into(), "no".into()];
         let float_hint = text(if conf.float_by_default {
             "new windows float (macOS-like)"
         } else {
             "new windows tile (classic sway)"
-        }).size(11).color(color!(0x888888));
+        })
+        .size(11)
+        .color(color!(0x888888));
         let float_picker = pick_list(
             float_options,
-            Some(if conf.float_by_default { "yes".to_string() } else { "no".to_string() }),
+            Some(if conf.float_by_default {
+                "yes".to_string()
+            } else {
+                "no".to_string()
+            }),
             |val: String| Message::DefaultsFloatByDefault(val == "yes"),
         )
         .text_size(13)
@@ -1449,29 +1817,69 @@ impl App {
 
         content_col = content_col
             .push(float_title)
-            .push(float_row);
+            .push(float_row)
+            .push(horizontal_rule(1));
+
+        // ── Super Key (macOS-style) ──
+        let super_title = text("Super Key (⌘ style)").size(16).color(color!(0x88bb88));
+
+        let has_wtype = crate::defaults::has_wtype();
+
+        let cp_label = text("Super+C/V/X/A/Z").size(13).width(Length::Fixed(160.0));
+        let cp_options: Vec<String> = vec!["yes".into(), "no".into()];
+        let cp_hint = if !has_wtype {
+            text("requires wtype (not installed)")
+                .size(11)
+                .color(color!(0xcc8888))
+        } else if conf.super_copy_paste {
+            text("copy, paste, cut, select all, undo, redo")
+                .size(11)
+                .color(color!(0x888888))
+        } else {
+            text("use Ctrl+C/V like normal Linux")
+                .size(11)
+                .color(color!(0x888888))
+        };
+        let cp_picker = pick_list(
+            cp_options,
+            Some(if conf.super_copy_paste {
+                "yes".to_string()
+            } else {
+                "no".to_string()
+            }),
+            |val: String| Message::DefaultsSuperCopyPaste(val == "yes"),
+        )
+        .text_size(13)
+        .width(Length::Fixed(120.0));
+        let cp_row = row![cp_label, cp_picker, cp_hint]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        content_col = content_col.push(super_title).push(cp_row);
 
         let buttons = row![
+            button(text("Close").size(14))
+                .on_press(Message::Quit)
+                .style(dismiss_button)
+                .padding([8, 16]),
+            iced::widget::horizontal_space(),
             button(text("Save").size(14))
                 .on_press(Message::SaveDefaults)
                 .style(dark_button)
                 .padding([8, 16]),
-            button(text("Save & Reload").size(14))
+            button(text("Apply").size(14))
                 .on_press(Message::SaveAndReloadDefaults)
-                .style(dark_button)
-                .padding([8, 16]),
-            button(text("Close").size(14))
-                .on_press(Message::Quit)
-                .style(dark_button)
+                .style(primary_button)
                 .padding([8, 16]),
         ]
-        .spacing(8);
+        .spacing(8)
+        .align_y(alignment::Vertical::Center);
 
         column![
-            scrollable(
-                container(content_col)
-                    .padding(iced::Padding { right: 32.0, ..iced::Padding::ZERO })
-            )
+            scrollable(container(content_col).padding(iced::Padding {
+                right: 32.0,
+                ..iced::Padding::ZERO
+            }))
             .height(Length::Fill),
             buttons,
         ]
