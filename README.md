@@ -15,7 +15,7 @@ Window management for Sway with a macOS-like feel. Snap windows with Rectangle's
 - **Window snapping** — halves, thirds, two-thirds, corners, center. Cycles on repeat.
 - **MRU window switching** — Cmd+Tab cycles most-recently-used (no daemon needed)
 - **macOS-style Cmd key** — Cmd+C/V/X/A/Z, Cmd+T/N/W/L/R/F/Q and Cmd/Option text navigation (via wtype, togglable)
-- **Screenshot shortcuts** — Super+Shift+3/4/5 for full/region/window capture
+- **Launcher, terminal and screenshots** — Cmd+Space launcher, Cmd+Return terminal, Cmd+Shift+3/4/5 screen/region/window capture (set on the Behavior page)
 - **GUI config editor** — four tabs for shortcuts, displays, appearance, and behavior
 - **Key recording** — click ⌨ then press a combo to capture it
 - **Conflict detection** — warns on duplicate keybindings, can auto-fix
@@ -42,6 +42,8 @@ Cmd is Super ($mod), Option is Alt (Mod1).
 | Cmd+Left/Right, Cmd+Up/Down | Line start/end, document start/end |
 | Opt+Left/Right | Word left/right |
 | Cmd+Backspace / Opt+Backspace | Delete to line start / delete word |
+| Cmd+Space / Cmd+Return | Launcher (`fuzzel`) / terminal (`foot`) |
+| Cmd+Shift+3 / 4 / 5 | Screenshot screen / region / focused window to ~/Pictures |
 
 In terminals Cmd+C/V copy and paste and Ctrl+C stays an interrupt. "Fix Conflicts" comments out bindings in your sway config that use these keys or that the keymap moved; "Reset" loads the default keymap.
 
@@ -74,7 +76,7 @@ Use the one-line installer above. To build from source instead, run `cargo build
 ### Optional dependencies
 
 - **wtype** — required for the Cmd app shortcuts (`apt install wtype`)
-- **grim** + **slurp** — for screenshot shortcuts
+- **grim** + **slurp** — for the Cmd+Shift+3/4/5 screenshot shortcuts
 - **swaylock** + **swayidle** — for lock screen
 
 ## GUI

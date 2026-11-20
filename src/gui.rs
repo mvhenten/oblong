@@ -569,6 +569,9 @@ enum Message {
     DefaultsMouseWarping(String),
     DefaultsFloatByDefault(bool),
     DefaultsSuperCopyPaste(bool),
+    DefaultsLauncher(String),
+    DefaultsTerminal(String),
+    DefaultsScreenshots(bool),
     DefaultsScreenBlank(u32),
     DefaultsScreenBlankStep(i32),
     DefaultsLockTimeout(u32),
@@ -929,6 +932,18 @@ impl App {
             }
             Message::DefaultsSuperCopyPaste(val) => {
                 self.defaults.super_copy_paste = val;
+                self.status.clear();
+            }
+            Message::DefaultsLauncher(val) => {
+                self.defaults.launcher = val;
+                self.status.clear();
+            }
+            Message::DefaultsTerminal(val) => {
+                self.defaults.terminal = val;
+                self.status.clear();
+            }
+            Message::DefaultsScreenshots(val) => {
+                self.defaults.screenshots = val;
                 self.status.clear();
             }
             Message::DefaultsScreenBlank(val) => {
@@ -1830,9 +1845,53 @@ impl App {
             .spacing(12)
             .align_y(alignment::Vertical::Center);
 
+        let launcher_label = text("⌘Space launcher").size(13).width(Length::Fixed(160.0));
+        let launcher_input = text_input("fuzzel", &conf.launcher)
+            .on_input(Message::DefaultsLauncher)
+            .size(13)
+            .width(Length::Fixed(240.0));
+        let launcher_row = row![launcher_label, launcher_input]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        let terminal_label = text("⌘Return terminal")
+            .size(13)
+            .width(Length::Fixed(160.0));
+        let terminal_input = text_input("foot", &conf.terminal)
+            .on_input(Message::DefaultsTerminal)
+            .size(13)
+            .width(Length::Fixed(240.0));
+        let terminal_row = row![terminal_label, terminal_input]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
+        let shot_label = text("⌘⇧3/4/5 screenshots")
+            .size(13)
+            .width(Length::Fixed(160.0));
+        let shot_picker = pick_list(
+            vec!["yes".to_string(), "no".to_string()],
+            Some(if conf.screenshots {
+                "yes".to_string()
+            } else {
+                "no".to_string()
+            }),
+            |val: String| Message::DefaultsScreenshots(val == "yes"),
+        )
+        .text_size(13)
+        .width(Length::Fixed(120.0));
+        let shot_hint = text("screen / region / window to ~/Pictures (requires grim, slurp)")
+            .size(11)
+            .color(color!(0x888888));
+        let shot_row = row![shot_label, shot_picker, shot_hint]
+            .spacing(12)
+            .align_y(alignment::Vertical::Center);
+
         content_col = content_col
             .push(super_title)
             .push(cp_row)
+            .push(launcher_row)
+            .push(terminal_row)
+            .push(shot_row)
             .push(horizontal_rule(1));
 
         // ── Screen Lock & Blanking ──

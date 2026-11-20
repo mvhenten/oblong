@@ -25,6 +25,12 @@ pub struct DefaultsConfig {
     pub float_by_default: bool,
     /// macOS-style Cmd app shortcuts (copy, paste, tabs, find, line jumps)
     pub super_copy_paste: bool,
+    /// Command Cmd+Space runs (empty = unbound)
+    pub launcher: String,
+    /// Command Cmd+Return runs (empty = unbound)
+    pub terminal: String,
+    /// Cmd+Shift+3/4/5 screenshots of the screen, a region or the focused window
+    pub screenshots: bool,
     /// Screen blank timeout in seconds (0 = disabled)
     pub screen_blank_timeout: u32,
     /// Lock screen timeout in seconds (0 = disabled)
@@ -41,6 +47,9 @@ impl Default for DefaultsConfig {
             mouse_warping: "output".into(),
             float_by_default: true,
             super_copy_paste: true,
+            launcher: "fuzzel".into(),
+            terminal: "foot".into(),
+            screenshots: true,
             screen_blank_timeout: 300,
             lock_timeout: 600,
         }
@@ -127,9 +136,20 @@ pub fn write_defaults_conf(config: &DefaultsConfig) -> Result<(), String> {
     // macOS-style Cmd app shortcuts via wtype
     if config.super_copy_paste {
         let helper = super_key_helper_path();
-        write_super_key_helper(&helper).map_err(|e| e.to_string())?;
+        write_helper(&helper, SUPER_KEY_HELPER).map_err(|e| e.to_string())?;
         out.push_str("\n# macOS-style Cmd app shortcuts (requires wtype)\n");
         out.push_str(&render_app_shortcuts(&helper.display().to_string()));
+    }
+
+    if config.screenshots {
+        write_helper(&screenshot_helper_path(), SCREENSHOT_HELPER).map_err(|e| e.to_string())?;
+    }
+    let launch = launch_bindings(config);
+    if !launch.is_empty() {
+        out.push_str("\n# Launcher, terminal and screenshots\n");
+        for b in &launch {
+            out.push_str(&format!("bindsym --no-repeat {} {}\n", b.keys, b.command));
+        }
     }
 
     // Screen blanking & auto-lock via swayidle
@@ -213,20 +233,50 @@ fn render_app_shortcuts(helper: &str) -> String {
         .collect()
 }
 
-/// The Cmd app shortcut bindings `write_defaults_conf` generates, for
-/// conflict detection against the main sway config.
-pub fn app_bindings(config: &DefaultsConfig) -> Vec<Binding> {
-    if !config.super_copy_paste {
-        return Vec::new();
+fn screenshot_helper_path() -> PathBuf {
+    sway_oblong_dir().join("screenshot.sh")
+}
+
+/// The launcher, terminal and screenshot bindings `write_defaults_conf` generates.
+fn launch_bindings(config: &DefaultsConfig) -> Vec<Binding> {
+    let mut bindings = Vec::new();
+    for (keys, command) in [
+        ("$mod+space", &config.launcher),
+        ("$mod+Return", &config.terminal),
+    ] {
+        let command = command.trim();
+        if !command.is_empty() {
+            bindings.push(Binding {
+                keys: keys.into(),
+                command: format!("exec {command}"),
+            });
+        }
     }
-    let helper = super_key_helper_path().display().to_string();
-    APP_SHORTCUTS
-        .iter()
-        .map(|(keys, action, _)| Binding {
+    if config.screenshots {
+        let helper = screenshot_helper_path().display().to_string();
+        for (n, target) in [(3, "full"), (4, "region"), (5, "window")] {
+            bindings.push(Binding {
+                keys: format!("$mod+Shift+{n}"),
+                command: format!("exec {helper} {target}"),
+            });
+        }
+    }
+    bindings
+}
+
+/// Every Cmd binding `write_defaults_conf` generates, for conflict
+/// detection against the main sway config.
+pub fn app_bindings(config: &DefaultsConfig) -> Vec<Binding> {
+    let mut bindings = Vec::new();
+    if config.super_copy_paste {
+        let helper = super_key_helper_path().display().to_string();
+        bindings.extend(APP_SHORTCUTS.iter().map(|(keys, action, _)| Binding {
             keys: (*keys).into(),
             command: app_shortcut_command(&helper, action),
-        })
-        .collect()
+        }));
+    }
+    bindings.extend(launch_bindings(config));
+    bindings
 }
 
 /// Check if wtype is available on the system.
@@ -238,9 +288,30 @@ pub fn has_wtype() -> bool {
         .unwrap_or(false)
 }
 
-fn write_super_key_helper(path: &std::path::Path) -> std::io::Result<()> {
+fn write_helper(path: &std::path::Path, script: &str) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    let script = r#"#!/bin/bash
+    fs::write(path, script)?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+}
+
+const SCREENSHOT_HELPER: &str = r#"#!/bin/bash
+# Screenshot to ~/Pictures: full screen, a selected region, or the focused window.
+
+DIR="$HOME/Pictures"
+mkdir -p "$DIR"
+FILE="$DIR/screenshot-$(date +%Y-%m-%d-%H%M%S).png"
+
+case "$1" in
+    full) grim "$FILE" ;;
+    region) grim -g "$(slurp)" "$FILE" ;;
+    window)
+        GEOMETRY=$(swaymsg -t get_tree | jq -r '.. | select(.focused? == true) | .rect | "\(.x),\(.y) \(.width)x\(.height)"')
+        grim -g "$GEOMETRY" "$FILE"
+        ;;
+esac
+"#;
+
+const SUPER_KEY_HELPER: &str = r#"#!/bin/bash
 # Helper for macOS-style Super key shortcuts.
 # Detects whether the focused app is a terminal and sends the
 # appropriate key combo via wtype.
@@ -298,10 +369,6 @@ case "$1" in
         ;;
 esac
 "#;
-    fs::write(path, script)?;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755))?;
-    Ok(())
-}
 
 /// Apply defaults to the running sway instance.
 pub fn apply_defaults_live(config: &DefaultsConfig) {
@@ -379,7 +446,9 @@ mod tests {
             .map(|b| normalized(&b.keys))
             .collect();
         assert_eq!(keys.len(), window.len());
-        keys.extend(APP_SHORTCUTS.iter().map(|(k, _, _)| normalized(k)));
+        let app = app_bindings(&DefaultsConfig::default());
+        assert_eq!(app.len(), APP_SHORTCUTS.len() + 5);
+        keys.extend(app.iter().map(|b| normalized(&b.keys)));
 
         let total = keys.len();
         keys.sort_unstable();
