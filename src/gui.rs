@@ -544,11 +544,7 @@ impl Default for App {
             Ok(outputs) => {
                 let configs = load_output_configs()
                     .and_then(|mut cfgs| {
-                        if migrate_output_configs(&mut cfgs, &outputs) {
-                            Some(cfgs)
-                        } else {
-                            None // migration failed, regenerate
-                        }
+                        migrate_output_configs(&mut cfgs, &outputs).then_some(cfgs)
                     })
                     .unwrap_or_else(|| {
                         let mut cfgs: Vec<OutputConfig> =
