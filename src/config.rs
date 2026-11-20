@@ -404,6 +404,30 @@ pub fn comment_out_conflicts(keys_to_disable: &[String]) -> Result<usize, String
 
 // ── Sway config writing ────────────────────────────────────
 
+/// Render bindings as sway config. A key combo bound more than once keeps
+/// only its last binding, matching sway's own "later binding wins" rule
+/// without the overwrite warning.
+pub fn render_shortcuts(bindings: &[&Binding]) -> String {
+    let mut output = String::from("# ── Oblong — auto-generated, do not edit by hand ──\n\n");
+
+    for (i, b) in bindings.iter().enumerate() {
+        let keys = b.keys.trim();
+        if keys.is_empty() {
+            continue;
+        }
+        if bindings[i + 1..]
+            .iter()
+            .any(|later| later.keys.trim() == keys)
+        {
+            continue;
+        }
+        let label = label_for_command(&b.command);
+        output.push_str(&format!("# {}\nbindsym {} {}\n\n", label, keys, b.command));
+    }
+
+    output
+}
+
 /// Write managed bindings to ~/.config/sway/oblong/shortcuts.conf
 /// and ensure the include line is present. Does NOT modify user bindings.
 pub fn write_sway_config(bindings: &[&Binding]) -> Result<(), String> {
@@ -412,22 +436,41 @@ pub fn write_sway_config(bindings: &[&Binding]) -> Result<(), String> {
 
     let conf_file = oblong_dir.join("shortcuts.conf");
 
-    let mut output = String::from("# ── Oblong — auto-generated, do not edit by hand ──\n\n");
-
-    for b in bindings {
-        if b.keys.trim().is_empty() {
-            continue;
-        }
-        let label = label_for_command(&b.command);
-        output.push_str(&format!(
-            "# {}\nbindsym {} {}\n\n",
-            label, b.keys, b.command
-        ));
-    }
-
-    fs::write(&conf_file, &output).map_err(|e| e.to_string())?;
+    fs::write(&conf_file, render_shortcuts(bindings)).map_err(|e| e.to_string())?;
 
     ensure_include()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_shortcuts_binds_each_key_combo_once_and_last_wins() {
+        let sway = "\
+bindsym Mod4+Shift+3 move container to workspace number 3
+bindsym Mod4+Shift+4 move container to workspace number 4
+bindsym Mod4+Shift+5 move container to workspace number 5
+bindsym Mod4+Shift+3 exec grim ~/Pictures/screenshot-full.png
+bindsym Mod4+Shift+4 exec grim -g \"$(slurp)\" ~/Pictures/screenshot-region.png
+bindsym Mod4+Shift+5 exec grim ~/Pictures/screenshot-window.png
+";
+        let groups = group_bindings(parse_sway_bindings(sway));
+        let all: Vec<&Binding> = groups.iter().flat_map(|g| &g.bindings).collect();
+        let rendered = render_shortcuts(&all);
+
+        let bound = parse_sway_bindings(&rendered);
+        let mut keys: Vec<&str> = bound.iter().map(|b| b.keys.as_str()).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(
+            keys.len(),
+            bound.len(),
+            "duplicate key combo in:\n{rendered}"
+        );
+        assert_eq!(bound.len(), 3);
+        assert!(bound.iter().all(|b| b.command.contains("grim")));
+    }
 }
