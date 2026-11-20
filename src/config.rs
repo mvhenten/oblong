@@ -122,9 +122,13 @@ pub fn categorize(b: &Binding) -> &'static str {
         "Move Window"
     } else if cmd.contains("workspace") {
         "Workspaces"
-    } else if cmd.starts_with("layout ") || cmd.starts_with("fullscreen") {
+    } else if cmd.starts_with("layout ")
+        || cmd.starts_with("fullscreen")
+        || cmd.starts_with("split")
+        || cmd.starts_with("mode ")
+    {
         "Layout"
-    } else if cmd.starts_with("exec ") || cmd == "kill" {
+    } else if cmd.starts_with("exec ") || cmd == "kill" || cmd == "reload" {
         "Apps & Commands"
     } else {
         "Other"
@@ -226,7 +230,7 @@ pub fn label_for_command(cmd: &str) -> String {
     if cmd_lower == "floating toggle" {
         return "Toggle Floating".into();
     }
-    if cmd_lower == "fullscreen toggle" {
+    if cmd_lower == "fullscreen toggle" || cmd_lower == "fullscreen" {
         return "Toggle Fullscreen".into();
     }
 
@@ -288,6 +292,18 @@ pub fn label_for_command(cmd: &str) -> String {
     if cmd_lower == "layout toggle split" {
         return "Toggle Split".into();
     }
+    if cmd_lower == "splith" {
+        return "Split Horizontal".into();
+    }
+    if cmd_lower == "splitv" {
+        return "Split Vertical".into();
+    }
+    if cmd_lower == "mode \"resize\"" {
+        return "Resize Mode".into();
+    }
+    if cmd_lower == "reload" {
+        return "Reload Sway".into();
+    }
 
     // Apps
     if cmd_lower == "kill" {
@@ -347,17 +363,87 @@ pub fn ensure_include() -> Result<(), String> {
 
 // ── Conflict detection ──────────────────────────────────────
 
-/// Find keys that are bound in both the main sway config and our managed bindings.
+/// Find main sway config bindings that clash with our managed bindings: the
+/// same key combo, or a command oblong now binds to a different key.
 pub fn detect_conflicts(managed: &[&Binding]) -> Vec<String> {
     let content = fs::read_to_string(sway_config_path()).unwrap_or_default();
-    let sway_bindings = parse_sway_bindings(&content);
-    let managed_keys: Vec<&str> = managed.iter().map(|b| b.keys.trim()).collect();
+    conflicting_keys(&parse_sway_bindings(&content), managed)
+}
 
+fn conflicting_keys(sway_bindings: &[Binding], managed: &[&Binding]) -> Vec<String> {
     sway_bindings
         .iter()
-        .filter(|b| managed_keys.contains(&b.keys.trim()))
+        .filter(|b| {
+            managed
+                .iter()
+                .any(|m| m.keys.trim() == b.keys.trim() || m.command.trim() == b.command.trim())
+        })
         .map(|b| b.keys.clone())
         .collect()
+}
+
+// ── Default keymap ─────────────────────────────────────────
+
+const SWAY_EXIT: &str = "exec swaynag -t warning -m 'You pressed the exit shortcut. Do you really want to exit sway? This will end your Wayland session.' -B 'Yes, exit sway' 'swaymsg exit'";
+
+/// The default window-management keymap: Rectangle's Ctrl+Option chords for
+/// snapping and sway's window commands, leaving Cmd ($mod) to app shortcuts.
+pub fn default_bindings(bin: &str) -> Vec<Binding> {
+    let bind = |keys: &str, command: String| Binding {
+        keys: keys.into(),
+        command,
+    };
+    let snap = |keys: &str, dir: &str| bind(keys, format!("exec {bin} snap {dir}"));
+
+    let mut bindings = vec![
+        snap("Ctrl+Mod1+Left", "left"),
+        snap("Ctrl+Mod1+Right", "right"),
+        snap("Ctrl+Mod1+Up", "up"),
+        snap("Ctrl+Mod1+Down", "down"),
+        snap("Ctrl+Mod1+Return", "maximize"),
+        snap("Ctrl+Mod1+c", "center"),
+        snap("Ctrl+Mod1+BackSpace", "restore"),
+        snap("Ctrl+Mod1+u", "topleft"),
+        snap("Ctrl+Mod1+i", "topright"),
+        snap("Ctrl+Mod1+j", "bottomleft"),
+        snap("Ctrl+Mod1+k", "bottomright"),
+        bind("$mod+Tab", format!("exec {bin} switch next")),
+        bind("$mod+Shift+Tab", format!("exec {bin} switch prev")),
+    ];
+
+    for dir in ["Left", "Right", "Up", "Down"] {
+        let lower = dir.to_lowercase();
+        bindings.push(bind(
+            &format!("Ctrl+Mod1+Shift+{dir}"),
+            format!("focus {lower}"),
+        ));
+        bindings.push(bind(
+            &format!("$mod+Ctrl+Mod1+{dir}"),
+            format!("move {lower}"),
+        ));
+    }
+
+    for n in 1..=9 {
+        bindings.push(bind(&format!("Ctrl+{n}"), format!("workspace number {n}")));
+        bindings.push(bind(
+            &format!("Ctrl+Shift+{n}"),
+            format!("move container to workspace number {n}"),
+        ));
+    }
+
+    bindings.extend([
+        bind("$mod+Ctrl+f", "fullscreen".into()),
+        bind("Ctrl+Mod1+r", "mode \"resize\"".into()),
+        bind("Ctrl+Mod1+s", "layout stacking".into()),
+        bind("Ctrl+Mod1+w", "layout tabbed".into()),
+        bind("Ctrl+Mod1+e", "layout toggle split".into()),
+        bind("Ctrl+Mod1+b", "splith".into()),
+        bind("Ctrl+Mod1+v", "splitv".into()),
+        bind("Ctrl+Mod1+Shift+r", "reload".into()),
+        bind("$mod+Shift+q", SWAY_EXIT.into()),
+    ]);
+
+    bindings
 }
 
 /// Comment out conflicting bindsyms in the main sway config.
@@ -472,5 +558,24 @@ bindsym Mod4+Shift+5 exec grim ~/Pictures/screenshot-window.png
         );
         assert_eq!(bound.len(), 3);
         assert!(bound.iter().all(|b| b.command.contains("grim")));
+    }
+
+    #[test]
+    fn conflicts_include_sway_window_bindings_the_default_keymap_moved() {
+        let sway = parse_sway_bindings(
+            "\
+bindsym $mod+Left focus left
+bindsym $mod+1 workspace number 1
+bindsym $mod+Return exec $term
+bindsym $mod+Tab exec something-else
+",
+        );
+        let defaults = default_bindings("oblong");
+        let managed: Vec<&Binding> = defaults.iter().collect();
+
+        assert_eq!(
+            conflicting_keys(&sway, &managed),
+            vec!["$mod+Left", "$mod+1", "$mod+Tab"]
+        );
     }
 }

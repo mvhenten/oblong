@@ -374,8 +374,6 @@ fn color_editor<'a>(hex: &'a str) -> Element<'a, Message> {
         .into()
 }
 
-// ── Default snap bindings ───────────────────────────────────
-
 // ── Key-to-sway conversion ────────────────────────────────
 
 fn named_key_to_sway(named: &keyboard::key::Named) -> Option<&'static str> {
@@ -445,65 +443,10 @@ fn key_to_sway(key: &keyboard::Key, modifiers: &keyboard::Modifiers) -> String {
     parts.join("+")
 }
 
-fn default_snap_bindings() -> Vec<Binding> {
-    let bin = std::env::current_exe()
+fn oblong_bin() -> String {
+    std::env::current_exe()
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "oblong".into());
-
-    vec![
-        Binding {
-            keys: "$mod+Left".into(),
-            command: format!("exec {bin} snap left"),
-        },
-        Binding {
-            keys: "$mod+Right".into(),
-            command: format!("exec {bin} snap right"),
-        },
-        Binding {
-            keys: "$mod+Up".into(),
-            command: format!("exec {bin} snap up"),
-        },
-        Binding {
-            keys: "$mod+Down".into(),
-            command: format!("exec {bin} snap down"),
-        },
-        Binding {
-            keys: "$mod+m".into(),
-            command: format!("exec {bin} snap maximize"),
-        },
-        Binding {
-            keys: "$mod+c".into(),
-            command: format!("exec {bin} snap center"),
-        },
-        Binding {
-            keys: "$mod+BackSpace".into(),
-            command: format!("exec {bin} snap restore"),
-        },
-        Binding {
-            keys: "$mod+u".into(),
-            command: format!("exec {bin} snap topleft"),
-        },
-        Binding {
-            keys: "$mod+i".into(),
-            command: format!("exec {bin} snap topright"),
-        },
-        Binding {
-            keys: "$mod+Shift+u".into(),
-            command: format!("exec {bin} snap bottomleft"),
-        },
-        Binding {
-            keys: "$mod+Shift+i".into(),
-            command: format!("exec {bin} snap bottomright"),
-        },
-        Binding {
-            keys: "$mod+Tab".into(),
-            command: format!("exec {bin} switch next"),
-        },
-        Binding {
-            keys: "$mod+Shift+Tab".into(),
-            command: format!("exec {bin} switch prev"),
-        },
-    ]
+        .unwrap_or_else(|_| "oblong".into())
 }
 
 // ── Tabs ────────────────────────────────────────────────────
@@ -538,7 +481,8 @@ struct App {
 
 impl Default for App {
     fn default() -> Self {
-        let groups = load_config().unwrap_or_else(|| group_bindings(default_snap_bindings()));
+        let groups =
+            load_config().unwrap_or_else(|| group_bindings(default_bindings(&oblong_bin())));
 
         let (sway_outputs, output_configs) = match query_outputs() {
             Ok(outputs) => {
@@ -590,6 +534,7 @@ enum Message {
     KeyCaptured(keyboard::Key, keyboard::Modifiers),
     SaveShortcuts,
     SaveAndReloadShortcuts,
+    ResetShortcuts,
     FixConflicts,
     // Displays
     OutputResolution(usize, String),
@@ -654,6 +599,13 @@ pub enum ColorField {
 impl App {
     fn all_bindings(&self) -> Vec<&Binding> {
         self.groups.iter().flat_map(|g| &g.bindings).collect()
+    }
+
+    fn main_config_conflicts(&self) -> Vec<String> {
+        let app = app_bindings(&self.defaults);
+        let mut managed = self.all_bindings();
+        managed.extend(app.iter());
+        detect_conflicts(&managed)
     }
 
     fn other_output_names(&self, exclude: &str) -> Vec<String> {
@@ -723,9 +675,13 @@ impl App {
                 }
                 Err(e) => self.status = format!("✗ Error: {e}"),
             },
+            Message::ResetShortcuts => {
+                self.groups = group_bindings(default_bindings(&oblong_bin()));
+                self.recording = None;
+                self.status = "Default shortcuts loaded. Apply to use them.".into();
+            }
             Message::FixConflicts => {
-                let all = self.all_bindings();
-                let conflicts = detect_conflicts(&all);
+                let conflicts = self.main_config_conflicts();
                 if conflicts.is_empty() {
                     self.status = "No conflicts found.".into();
                 } else {
@@ -1047,7 +1003,7 @@ impl App {
         write_sway_config(&all)?;
         save_config(&self.groups);
 
-        let conflicts = detect_conflicts(&all);
+        let conflicts = self.main_config_conflicts();
         if conflicts.is_empty() {
             Ok(())
         } else {
@@ -1228,6 +1184,10 @@ impl App {
                 .padding([8, 16]),
             button(text("Fix Conflicts").size(14))
                 .on_press(Message::FixConflicts)
+                .style(destructive_button)
+                .padding([8, 16]),
+            button(text("Reset").size(14))
+                .on_press(Message::ResetShortcuts)
                 .style(destructive_button)
                 .padding([8, 16]),
             iced::widget::horizontal_space(),
@@ -1840,14 +1800,14 @@ impl App {
 
         let has_wtype = crate::defaults::has_wtype();
 
-        let cp_label = text("Super+C/V/X/A/Z").size(13).width(Length::Fixed(160.0));
+        let cp_label = text("⌘ app shortcuts").size(13).width(Length::Fixed(160.0));
         let cp_options: Vec<String> = vec!["yes".into(), "no".into()];
         let cp_hint = if !has_wtype {
             text("requires wtype (not installed)")
                 .size(11)
                 .color(color!(0xcc8888))
         } else if conf.super_copy_paste {
-            text("copy, paste, cut, select all, undo, redo")
+            text("⌘C/V/X/A/Z, ⌘T/N/W/L/R/F/Q, ⌘/⌥ arrows and backspace")
                 .size(11)
                 .color(color!(0x888888))
         } else {

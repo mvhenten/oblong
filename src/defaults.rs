@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::config::Binding;
+
 /// Sway behavior defaults that make it work like a proper desktop.
 /// These are settings that aren't exposed in other tabs but are
 /// essential for good UX.
@@ -21,7 +23,7 @@ pub struct DefaultsConfig {
     pub mouse_warping: String,
     /// Float all new windows by default (macOS-like)
     pub float_by_default: bool,
-    /// macOS-style Super+C/V/A/Z shortcuts
+    /// macOS-style Cmd app shortcuts (copy, paste, tabs, find, line jumps)
     pub super_copy_paste: bool,
     /// Screen blank timeout in seconds (0 = disabled)
     pub screen_blank_timeout: u32,
@@ -38,7 +40,7 @@ impl Default for DefaultsConfig {
             workspace_auto_back_and_forth: true,
             mouse_warping: "output".into(),
             float_by_default: true,
-            super_copy_paste: false,
+            super_copy_paste: true,
             screen_blank_timeout: 300,
             lock_timeout: 600,
         }
@@ -122,24 +124,12 @@ pub fn write_defaults_conf(config: &DefaultsConfig) -> Result<(), String> {
     out.push_str("for_window [app_id=\"Oblong\"] floating enable\n");
     out.push_str("for_window [app_id=\"Oblong\"] move position center\n");
 
-    // macOS-style Super+C/V/A/Z via wtype
+    // macOS-style Cmd app shortcuts via wtype
     if config.super_copy_paste {
-        let helper = dir.join("super-key-helper.sh");
+        let helper = super_key_helper_path();
         write_super_key_helper(&helper).map_err(|e| e.to_string())?;
-        let h = helper.display();
-        out.push_str("\n# macOS-style Super key shortcuts (requires wtype)\n");
-        out.push_str(&format!("bindsym --no-repeat $mod+c exec {} copy\n", h));
-        out.push_str(&format!("bindsym --no-repeat $mod+v exec {} paste\n", h));
-        out.push_str(&format!(
-            "bindsym --no-repeat $mod+a exec {} select-all\n",
-            h
-        ));
-        out.push_str(&format!("bindsym --no-repeat $mod+z exec {} undo\n", h));
-        out.push_str(&format!(
-            "bindsym --no-repeat $mod+Shift+z exec {} redo\n",
-            h
-        ));
-        out.push_str(&format!("bindsym --no-repeat $mod+x exec {} cut\n", h));
+        out.push_str("\n# macOS-style Cmd app shortcuts (requires wtype)\n");
+        out.push_str(&render_app_shortcuts(&helper.display().to_string()));
     }
 
     // Screen blanking & auto-lock via swayidle
@@ -172,6 +162,73 @@ pub fn write_defaults_conf(config: &DefaultsConfig) -> Result<(), String> {
     Ok(())
 }
 
+fn super_key_helper_path() -> PathBuf {
+    sway_oblong_dir().join("super-key-helper.sh")
+}
+
+/// Cmd app shortcuts as (keys, helper action, repeats while held).
+/// The `kill` action is sway's own command rather than a helper action.
+const APP_SHORTCUTS: &[(&str, &str, bool)] = &[
+    ("$mod+c", "copy", false),
+    ("$mod+v", "paste", false),
+    ("$mod+x", "cut", false),
+    ("$mod+a", "select-all", false),
+    ("$mod+z", "undo", false),
+    ("$mod+Shift+z", "redo", false),
+    ("$mod+t", "new-tab", false),
+    ("$mod+Shift+t", "reopen-tab", false),
+    ("$mod+n", "new-window", false),
+    ("$mod+w", "close-tab", false),
+    ("$mod+l", "address-bar", false),
+    ("$mod+r", "reload", false),
+    ("$mod+f", "find", false),
+    ("$mod+q", "kill", false),
+    ("$mod+Left", "line-start", true),
+    ("$mod+Right", "line-end", true),
+    ("$mod+Up", "doc-start", true),
+    ("$mod+Down", "doc-end", true),
+    ("Mod1+Left", "word-left", true),
+    ("Mod1+Right", "word-right", true),
+    ("$mod+BackSpace", "delete-line", true),
+    ("Mod1+BackSpace", "delete-word", true),
+];
+
+fn app_shortcut_command(helper: &str, action: &str) -> String {
+    if action == "kill" {
+        return "kill".into();
+    }
+    format!("exec {helper} {action}")
+}
+
+fn render_app_shortcuts(helper: &str) -> String {
+    APP_SHORTCUTS
+        .iter()
+        .map(|(keys, action, repeat)| {
+            let flag = if *repeat { "" } else { "--no-repeat " };
+            format!(
+                "bindsym {flag}{keys} {}\n",
+                app_shortcut_command(helper, action)
+            )
+        })
+        .collect()
+}
+
+/// The Cmd app shortcut bindings `write_defaults_conf` generates, for
+/// conflict detection against the main sway config.
+pub fn app_bindings(config: &DefaultsConfig) -> Vec<Binding> {
+    if !config.super_copy_paste {
+        return Vec::new();
+    }
+    let helper = super_key_helper_path().display().to_string();
+    APP_SHORTCUTS
+        .iter()
+        .map(|(keys, action, _)| Binding {
+            keys: (*keys).into(),
+            command: app_shortcut_command(&helper, action),
+        })
+        .collect()
+}
+
 /// Check if wtype is available on the system.
 pub fn has_wtype() -> bool {
     std::process::Command::new("which")
@@ -196,36 +253,48 @@ if echo "$APP_ID" | grep -qiE "^($TERMINALS)$"; then
     IS_TERM=1
 fi
 
+# Ctrl+Shift+<key> in terminals (so Ctrl+C stays an interrupt), Ctrl+<key> elsewhere.
+app_ctrl() {
+    if [ $IS_TERM -eq 1 ]; then
+        wtype -M ctrl -M shift -k "$1" -m shift -m ctrl
+    else
+        wtype -M ctrl -k "$1" -m ctrl
+    fi
+}
+
+ctrl() {
+    wtype -M ctrl -k "$1" -m ctrl
+}
+
 case "$1" in
-    copy)
-        if [ $IS_TERM -eq 1 ]; then
-            wtype -M ctrl -M shift -k c -m shift -m ctrl
-        else
-            wtype -M ctrl -k c -m ctrl
-        fi
+    copy) app_ctrl c ;;
+    paste) app_ctrl v ;;
+    cut) app_ctrl x ;;
+    new-tab) app_ctrl t ;;
+    new-window) app_ctrl n ;;
+    close-tab) app_ctrl w ;;
+    address-bar) app_ctrl l ;;
+    reload) app_ctrl r ;;
+    find) app_ctrl f ;;
+    select-all) ctrl a ;;
+    undo) ctrl z ;;
+    redo) wtype -M ctrl -M shift -k z -m shift -m ctrl ;;
+    reopen-tab) wtype -M ctrl -M shift -k t -m shift -m ctrl ;;
+    line-start) wtype -k Home ;;
+    line-end) wtype -k End ;;
+    doc-start) ctrl Home ;;
+    doc-end) ctrl End ;;
+    word-left)
+        if [ $IS_TERM -eq 1 ]; then wtype -M alt -k b -m alt; else ctrl Left; fi
         ;;
-    paste)
-        if [ $IS_TERM -eq 1 ]; then
-            wtype -M ctrl -M shift -k v -m shift -m ctrl
-        else
-            wtype -M ctrl -k v -m ctrl
-        fi
+    word-right)
+        if [ $IS_TERM -eq 1 ]; then wtype -M alt -k f -m alt; else ctrl Right; fi
         ;;
-    cut)
-        if [ $IS_TERM -eq 1 ]; then
-            wtype -M ctrl -M shift -k x -m shift -m ctrl
-        else
-            wtype -M ctrl -k x -m ctrl
-        fi
+    delete-line)
+        if [ $IS_TERM -eq 1 ]; then ctrl u; else wtype -M shift -k Home -m shift -k BackSpace; fi
         ;;
-    select-all)
-        wtype -M ctrl -k a -m ctrl
-        ;;
-    undo)
-        wtype -M ctrl -k z -m ctrl
-        ;;
-    redo)
-        wtype -M ctrl -M shift -k z -m shift -m ctrl
+    delete-word)
+        if [ $IS_TERM -eq 1 ]; then ctrl w; else ctrl BackSpace; fi
         ;;
 esac
 "#;
@@ -285,5 +354,67 @@ pub fn apply_defaults_live(config: &DefaultsConfig) {
         }
         args.extend(["before-sleep".into(), "swaylock -c 1a1a1a".into()]);
         let _ = std::process::Command::new("swayidle").args(&args).spawn();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{default_bindings, parse_sway_bindings, render_shortcuts};
+
+    fn normalized(keys: &str) -> String {
+        let mut parts: Vec<String> = keys.split('+').map(str::to_lowercase).collect();
+        let key = parts.pop().unwrap_or_default();
+        parts.sort_unstable();
+        parts.push(key);
+        parts.join("+")
+    }
+
+    #[test]
+    fn default_keymap_binds_each_combo_once_and_leaves_helper_keys_free() {
+        let window = default_bindings("oblong");
+        let window_refs: Vec<&Binding> = window.iter().collect();
+        let mut keys: Vec<String> = parse_sway_bindings(&render_shortcuts(&window_refs))
+            .iter()
+            .map(|b| normalized(&b.keys))
+            .collect();
+        assert_eq!(keys.len(), window.len());
+        keys.extend(APP_SHORTCUTS.iter().map(|(k, _, _)| normalized(k)));
+
+        let total = keys.len();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), total, "a key combo is bound twice");
+
+        let vt_switch = (1..=12).map(|n| normalized(&format!("Ctrl+Mod1+F{n}")));
+        let helper_sends = [
+            "Ctrl+c",
+            "Ctrl+v",
+            "Ctrl+x",
+            "Ctrl+a",
+            "Ctrl+z",
+            "Ctrl+t",
+            "Ctrl+n",
+            "Ctrl+w",
+            "Ctrl+l",
+            "Ctrl+r",
+            "Ctrl+f",
+            "Ctrl+u",
+            "Ctrl+Left",
+            "Ctrl+Right",
+            "Ctrl+Home",
+            "Ctrl+End",
+            "Ctrl+BackSpace",
+            "Mod1+b",
+            "Mod1+f",
+            "Home",
+            "End",
+            "Shift+Home",
+            "BackSpace",
+        ]
+        .map(normalized);
+        for reserved in vt_switch.chain(helper_sends) {
+            assert!(!keys.contains(&reserved), "{reserved} must stay unbound");
+        }
     }
 }

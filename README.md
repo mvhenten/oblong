@@ -6,19 +6,44 @@ curl -fsSL https://raw.githubusercontent.com/mvhenten/oblong/main/install.sh | s
 
 Installs the latest build to `~/.local/bin/oblong` and adds an Oblong entry to your app launcher (Linux x86_64).
 
-Window management for Sway with a macOS-like feel. Snap windows, switch with MRU order, use Super+C/V for copy/paste, and configure everything through a GUI.
+Window management for Sway with a macOS-like feel. Snap windows with Rectangle's Ctrl+Option chords, switch with Cmd+Tab, keep Cmd for app shortcuts, and configure everything through a GUI.
 
 ![Shortcuts](https://raw.githubusercontent.com/mvhenten/oblong/screenshots/shortcuts.png)
 
 ## Features
 
 - **Window snapping** — halves, thirds, two-thirds, corners, center. Cycles on repeat.
-- **MRU window switching** — Super+Tab cycles most-recently-used (no daemon needed)
-- **macOS-style Super key** — Super+C/V/X/A/Z for copy, paste, cut, select all, undo (via wtype, togglable)
+- **MRU window switching** — Cmd+Tab cycles most-recently-used (no daemon needed)
+- **macOS-style Cmd key** — Cmd+C/V/X/A/Z, Cmd+T/N/W/L/R/F/Q and Cmd/Option text navigation (via wtype, togglable)
 - **Screenshot shortcuts** — Super+Shift+3/4/5 for full/region/window capture
 - **GUI config editor** — four tabs for shortcuts, displays, appearance, and behavior
 - **Key recording** — click ⌨ then press a combo to capture it
 - **Conflict detection** — warns on duplicate keybindings, can auto-fix
+
+## Default keymap
+
+Cmd is Super ($mod), Option is Alt (Mod1).
+
+| Keys | Action |
+|---|---|
+| Ctrl+Opt+Left/Right/Up/Down | Snap to left/right/top/bottom half |
+| Ctrl+Opt+U/I/J/K | Snap to top-left/top-right/bottom-left/bottom-right |
+| Ctrl+Opt+Return / C / Backspace | Maximize / center / restore tiling |
+| Ctrl+Opt+Shift+arrows | Focus left/right/up/down |
+| Ctrl+Opt+Cmd+arrows | Move window |
+| Ctrl+1..9 / Ctrl+Shift+1..9 | Go to / move window to workspace |
+| Ctrl+Opt+R / S / W / E / B / V | Resize mode / stacking / tabbed / toggle split / split horizontal / split vertical |
+| Ctrl+Cmd+F | Fullscreen |
+| Ctrl+Opt+Shift+R / Cmd+Shift+Q | Reload sway / exit sway |
+| Cmd+Tab / Cmd+Shift+Tab | Next / previous window |
+| Cmd+C/V/X/A/Z, Cmd+Shift+Z | Copy, paste, cut, select all, undo, redo |
+| Cmd+T/N/W/L/R/F, Cmd+Shift+T | New tab, new window, close tab, address bar, reload, find, reopen tab |
+| Cmd+Q | Close window |
+| Cmd+Left/Right, Cmd+Up/Down | Line start/end, document start/end |
+| Opt+Left/Right | Word left/right |
+| Cmd+Backspace / Opt+Backspace | Delete to line start / delete word |
+
+In terminals Cmd+C/V copy and paste and Ctrl+C stays an interrupt. "Fix Conflicts" comments out bindings in your sway config that use these keys or that the keymap moved; "Reset" loads the default keymap.
 
 ## Usage
 
@@ -34,8 +59,8 @@ oblong snap maximize
 oblong snap restore    # back to tiling
 
 # Switch windows (MRU order)
-oblong switch next     # Super+Tab
-oblong switch prev     # Super+Shift+Tab
+oblong switch next     # Cmd+Tab
+oblong switch prev     # Cmd+Shift+Tab
 
 # Open the GUI
 oblong gui
@@ -48,7 +73,7 @@ Use the one-line installer above. To build from source instead, run `cargo build
 
 ### Optional dependencies
 
-- **wtype** — required for macOS-style Super+C/V shortcuts (`apt install wtype`)
+- **wtype** — required for the Cmd app shortcuts (`apt install wtype`)
 - **grim** + **slurp** — for screenshot shortcuts
 - **swaylock** + **swayidle** — for lock screen
 
@@ -62,7 +87,7 @@ Use the one-line installer above. To build from source instead, run `cargo build
 - **Shortcuts** — edit keybindings with live recording, duplicate detection, and conflict resolution
 - **Displays** — resolution, scale, and relative positioning for connected monitors
 - **Appearance** — font, gaps, borders, and per-class window colors with inline color picker
-- **Behavior** — focus policy, floating defaults, macOS-style Super key toggle
+- **Behavior** — focus policy, floating defaults, macOS-style Cmd key toggle
 
 ## File Layout
 
@@ -96,9 +121,9 @@ Oblong is **additive only**. It never modifies `~/.config/sway/config` beyond ad
 
 Sway's tree already tracks focus order in each container's `focus` array. The switcher reads this on each invocation and freezes the MRU list for the duration of a rapid Tab cycle (1.5s timeout). No background process needed.
 
-### macOS-style Super key
+### macOS-style Cmd key
 
-When enabled, `Super+C` sends `Ctrl+Shift+C` in terminals (copy) and `Ctrl+C` in GUI apps. Detection is automatic via `swaymsg get_tree`. Requires `wtype`.
+When enabled, `Cmd+C` sends `Ctrl+Shift+C` in terminals (copy) and `Ctrl+C` in GUI apps. Detection is automatic via `swaymsg get_tree`. Requires `wtype`.
 
 ### Snap cycling
 
