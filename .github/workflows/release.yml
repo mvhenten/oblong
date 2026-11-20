@@ -2,11 +2,16 @@ name: Release
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v*'
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -39,8 +44,30 @@ jobs:
       - name: Build release
         run: cargo build --release
 
-      - name: Create GitHub Release
+      - name: Name the binary
+        run: cp target/release/oblong oblong-linux-x86_64
+
+      - name: Move the edge tag to this commit
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git tag -f edge
+          git push -f origin refs/tags/edge
+
+      - name: Publish the latest main build
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/oblong
+          tag_name: edge
+          name: Latest build from main
+          body: Rebuilt on every push to main from ${{ github.sha }}.
+          make_latest: true
+          files: oblong-linux-x86_64
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/release/oblong
+            oblong-linux-x86_64
           generate_release_notes: true

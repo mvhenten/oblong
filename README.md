@@ -1,5 +1,11 @@
 # Oblong
 
+```sh
+curl -fsSL https://raw.githubusercontent.com/mvhenten/oblong/main/install.sh | sh
+```
+
+Installs the latest build to `~/.local/bin/oblong` and adds an Oblong entry to your app launcher (Linux x86_64).
+
 Window management for Sway with a macOS-like feel. Snap windows, switch with MRU order, use Super+C/V for copy/paste, and configure everything through a GUI.
 
 ![Shortcuts](https://raw.githubusercontent.com/mvhenten/oblong/screenshots/shortcuts.png)
@@ -38,10 +44,7 @@ oblong                 # gui is the default
 
 ## Install
 
-```bash
-cargo build --release
-cp target/release/oblong ~/.local/bin/
-```
+Use the one-line installer above. To build from source instead, run `cargo build --release` and copy `target/release/oblong` onto your PATH.
 
 ### Optional dependencies
 
