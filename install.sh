@@ -19,6 +19,10 @@ trap 'exit 1' INT TERM
 
 curl -fsSL --connect-timeout 10 --max-time 300 --retry 2 -o "$tmp" "$url"
 chmod 755 "$tmp"
+if ! "$tmp" --help >/dev/null 2>&1; then
+    echo "oblong: the downloaded binary does not run here, likely a glibc version mismatch; kept the existing install" >&2
+    exit 1
+fi
 mv -f "$tmp" "$bin"
 
 cat > "$app_dir/oblong.desktop" <<EOF
